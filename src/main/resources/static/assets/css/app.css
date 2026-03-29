@@ -1,0 +1,171 @@
+:root {
+    --primary-color: #007bff;
+    --secondary-color: #6c757d;
+    --background-start: #f0f4f8;
+    --background-end: #d9e2ec;
+    --card-bg: #ffffff;
+    --text-color: #212529;
+    --sub-text-color: #6c757d;
+    --card-shadow: rgba(0, 0, 0, 0.05);
+    --card-border: #dee2e6;
+    --input-bg: #fff;
+    --input-border: #ced4da;
+}
+
+body {
+    min-height: 100vh;
+    color: var(--text-color);
+    background: linear-gradient(135deg, var(--background-start) 0%, var(--background-end) 100%);
+    font-family: "Microsoft YaHei", "SimHei", sans-serif;
+}
+
+.tech-navbar {
+    background-color: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(10px);
+    border-radius: 12px;
+    padding: 8px 16px;
+    border: 1px solid var(--card-border);
+}
+
+.tech-title {
+    font-weight: 700;
+    color: var(--primary-color);
+}
+
+.panel-card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    box-shadow: 0 4px 12px var(--card-shadow);
+}
+
+.panel-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.edu-note {
+    border: 1px dashed rgba(0, 123, 255, 0.45);
+    background: rgba(0, 123, 255, 0.08);
+    color: #23477a;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 0.9rem;
+}
+
+.small-hint {
+    color: var(--sub-text-color);
+    font-size: 0.9rem;
+}
+
+label.form-label,
+.form-check-label,
+.form-text,
+.form-control,
+.form-select,
+.btn {
+    font-size: 0.95rem;
+}
+
+.form-control,
+.form-select {
+    background-color: var(--input-bg);
+    border-color: var(--input-border);
+    color: var(--text-color);
+}
+
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    background-color: var(--input-bg);
+    color: var(--text-color);
+}
+
+.form-control::placeholder {
+    color: #aab2bd;
+}
+
+.step-nav .list-group-item {
+    border: 0;
+    border-left: 3px solid transparent;
+    background: transparent;
+    color: #495057;
+    font-weight: 500;
+}
+
+.step-nav .list-group-item.active {
+    color: var(--primary-color);
+    border-left-color: var(--primary-color);
+    background: rgba(0, 123, 255, 0.1);
+    font-weight: bold;
+}
+
+.preview-wrap {
+    max-height: 320px;
+    overflow: auto;
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+}
+
+.table {
+    color: var(--text-color);
+}
+
+.table > :not(caption) > * > * {
+    border-bottom-color: var(--card-border);
+}
+
+.result-image {
+    max-width: 100%;
+    border-radius: 10px;
+    border: 1px solid var(--card-border);
+    background: #f8f9fa;
+    min-height: 220px;
+}
+
+.chat-widget-frame {
+    position: fixed;
+    right: 24px;
+    bottom: 20px;
+    border: none;
+    border-radius: 28px; /* Corresponds to the fab-ball's half-height */
+    z-index: 1080;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    transition: width 0.3s ease, height 0.3s ease, border-radius 0.3s ease;
+}
+
+.chat-widget-frame.open {
+    border-radius: 16px; /* Corresponds to the chat-panel's border-radius */
+}
+
+.step-panel.is-hidden {
+    display: none;
+}
+
+.wizard-nav {
+    gap: 12px;
+}
+
+#previewPager .btn {
+    padding: 2px 10px;
+    font-size: 0.85rem;
+}
+
+.btn-outline-light {
+    border-color: #6c757d;
+    color: #6c757d;
+}
+
+.btn-outline-light:hover {
+    background-color: #6c757d;
+    color: #fff;
+}
+
+@media (max-width: 992px) {
+    .chat-widget-frame {
+        right: 12px;
+        bottom: 12px;
+    }
+}

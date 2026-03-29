@@ -1,0 +1,98 @@
+:root {
+    --primary-color: #007bff;
+    --secondary-color: #6c757d;
+    --background-start: #f0f4f8;
+    --background-end: #d9e2ec;
+    --card-bg: #ffffff;
+    --text-color: #212529;
+    --sub-text-color: #6c757d;
+    --card-shadow: rgba(0, 0, 0, 0.1);
+    --card-hover-shadow: rgba(0, 0, 0, 0.15);
+    --card-border: rgba(0, 0, 0, 0.05);
+}
+
+body {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-color);
+    background: linear-gradient(135deg, var(--background-start) 0%, var(--background-end) 100%);
+    font-family: "Microsoft YaHei", "SimHei", sans-serif;
+}
+
+.home-wrap {
+    width: min(980px, 92vw);
+}
+
+.home-title {
+    font-size: 3rem;
+    font-weight: 800;
+    color: var(--primary-color);
+}
+
+.home-sub {
+    color: var(--sub-text-color);
+}
+
+.choice-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 24px;
+}
+
+.choice-card {
+    border-radius: 16px;
+    padding: 28px;
+    border: 1px solid var(--card-border);
+    background: var(--card-bg);
+    text-decoration: none;
+    color: var(--text-color);
+    transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+    box-shadow: 0 8px 24px var(--card-shadow);
+}
+
+.choice-card:not(.disabled):hover {
+    transform: translateY(-6px);
+    box-shadow: 0 12px 30px var(--card-hover-shadow);
+    border-color: var(--primary-color);
+}
+
+.choice-icon {
+    font-size: 2rem;
+}
+
+.choice-desc {
+    color: var(--sub-text-color);
+    min-height: 48px;
+}
+
+.choice-card.disabled {
+    cursor: not-allowed;
+    filter: grayscale(80%);
+    opacity: 0.7;
+}
+
+.choice-card.disabled:hover {
+    transform: none;
+    box-shadow: 0 8px 24px var(--card-shadow);
+}
+
+.btn-primary {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.btn-danger {
+    background-color: #dc3545;
+    border-color: #dc3545;
+}
+
+@media (max-width: 768px) {
+    .home-title {
+        font-size: 2.1rem;
+    }
+    .choice-grid {
+        grid-template-columns: 1fr;
+    }
+}
