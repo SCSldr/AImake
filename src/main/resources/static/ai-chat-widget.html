@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chat Widget</title>
+    <!-- 使用新的版本号强制刷新缓存 -->
+    <link href="assets/css/chat-widget.css?v=1.5" rel="stylesheet">
+</head>
+<body>
+
+<!-- 关键修复：添加一个稳定的根容器 -->
+<div class="widget-root">
+    <!-- 悬浮球 -->
+    <div id="fab" class="fab-ball">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+    </div>
+
+    <!-- 聊天面板 -->
+    <div id="panel" class="chat-panel">
+        <div class="chat-header">
+            <div class="chat-title">智造小精灵</div>
+            <div>
+                <button class="chat-header-btn" id="btnNewChat" type="button" title="新对话">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                </button>
+                <button class="chat-header-btn" id="btnMinimize" type="button" title="最小化">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>
+                </button>
+            </div>
+        </div>
+        <div class="chat-box" id="chatBox">
+            <div class="chat-item chat-ai">你好，我是你的智造小精灵，有问题直接问我。</div>
+        </div>
+        <div class="chat-input-row">
+            <input id="chatInput" class="chat-input" type="text" placeholder="输入问题...">
+            <button id="btnSendChat" class="chat-send" type="button">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+            </button>
+        </div>
+        <div class="chat-status">
+            <span id="timeLabel">就绪</span>
+            <span id="tokenLabel">Tokens: 0</span>
+        </div>
+    </div>
+</div>
+
+<!-- 使用新的版本号强制刷新缓存 -->
+<script src="assets/js/chat-widget.js?v=1.5"></script>
+
+</body>
+</html>

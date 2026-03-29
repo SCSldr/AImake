@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AImake - 无监督学习</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="assets/css/app.css?v=1.1" rel="stylesheet">
+</head>
+<body>
+<div class="container-fluid py-3">
+    <div class="d-flex align-items-center justify-content-between mb-3 tech-navbar">
+        <a href="home.html" class="btn btn-outline-secondary btn-sm">← 返回主菜单</a>
+        <h3 class="tech-title mb-0">无监督学习工作台</h3>
+        <span class="badge bg-danger-subtle text-danger">聚类 & 降维</span>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-12 col-xl-2">
+            <div class="card panel-card h-100">
+                <div class="card-body">
+                    <h6 class="panel-title mb-3">任务流程</h6>
+                    <div class="list-group step-nav" id="stepNav">
+                        <button class="list-group-item list-group-item-action active" data-step="step1">1. 数据准备</button>
+                        <button class="list-group-item list-group-item-action" data-step="step2">2. 数据清洗</button>
+                        <button class="list-group-item list-group-item-action" data-step="step3">3. 聚类分析</button>
+                        <button class="list-group-item list-group-item-action" data-step="step4">4. 降维可视化</button>
+                        <button class="list-group-item list-group-item-action" data-step="step5">5. 结果展示</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-xl-10">
+            <div class="card panel-card mb-3 step-panel" id="step1">
+                <div class="card-body">
+                    <h5 class="panel-title">1. 数据准备</h5>
+                    <p class="small-hint">上传数据文件或使用 AI 生成样例数据。</p>
+                    <div class="edu-note mb-3">知识点：无监督学习没有标签，输入特征的统计分布决定了聚类结构。</div>
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label">上传数据文件</label>
+                            <div class="input-group">
+                                <input type="file" class="form-control" id="dataFile" accept=".xlsx,.xls,.csv">
+                                <button class="btn btn-primary" id="btnLoadData">上传并预览</button>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">AI 生成需求</label>
+                            <textarea id="aiPrompt" class="form-control" rows="2" placeholder="例如：生成一份客户分群数据"></textarea>
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label class="form-label">生成行数</label>
+                            <input type="number" class="form-control" id="aiRowCount" value="50" min="10" max="10000">
+                        </div>
+                        <div class="col-12 d-flex">
+                            <button class="btn btn-outline-primary" id="btnGenerateData">AI 生成数据</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card panel-card mb-3 step-panel" id="step2">
+                <div class="card-body">
+                    <h5 class="panel-title">2. 数据清洗</h5>
+                    <p class="small-hint">移除缺失值、标准化结构，为聚类做好准备。</p>
+                    <div class="edu-note mb-3">知识点：聚类算法高度依赖距离度量，异常值会显著拉偏聚类中心。</div>
+                    <div class="d-flex flex-wrap gap-2 mb-3">
+                        <button class="btn btn-warning" id="btnCleanData">一键清洗</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card panel-card mb-3 step-panel" id="step3">
+                <div class="card-body">
+                    <h5 class="panel-title">3. 聚类分析</h5>
+                    <div class="edu-note mb-3">知识点：K 值越大分群越细，但过大可能导致噪声簇，建议结合业务经验迭代。</div>
+                    <div class="row g-3 align-items-end">
+                        <div class="col-12 col-md-3">
+                            <label class="form-label">聚类数量</label>
+                            <input type="number" class="form-control" id="nClusters" value="3" min="2" max="10">
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <label class="form-label">随机种子</label>
+                            <input type="number" class="form-control" id="randomSeed" value="42" min="0">
+                        </div>
+                        <div class="col-12 col-md-6 d-grid">
+                            <button class="btn btn-success" id="btnClustering">执行聚类</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card panel-card mb-3 step-panel" id="step4">
+                <div class="card-body">
+                    <h5 class="panel-title">4. 降维可视化</h5>
+                    <div class="edu-note mb-3">知识点：PCA强调线性可解释性，t-SNE更适合非线性结构可视化。</div>
+                    <div class="row g-3 align-items-end">
+                        <div class="col-12 col-md-4">
+                            <label class="form-label">降维方式</label>
+                            <select id="reduceMethod" class="form-select">
+                                <option value="pca">PCA (主成分分析)</option>
+                                <option value="tsne">t-SNE (流形学习)</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-8 d-grid">
+                            <button class="btn btn-secondary" id="btnVisualize">生成可视化图</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card panel-card step-panel" id="step5">
+                <div class="card-body">
+                    <h5 class="panel-title">5. 结果展示</h5>
+                    <div class="edu-note mb-3">知识点：解读聚类结果时，应结合各簇样本数和中心特征做业务命名。</div>
+                    <div class="row g-3">
+                        <div class="col-12 col-lg-6">
+                            <label class="form-label">聚类分布图</label>
+                            <img id="clusterImage" class="result-image" alt="聚类图">
+                        </div>
+                        <div class="col-12 col-lg-6">
+                            <label class="form-label">降维可视化图</label>
+                            <img id="visualizeImage" class="result-image" alt="降维图">
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <label class="form-label">聚类统计信息</label>
+                        <pre id="clusterStats" class="small-hint" style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 12px; min-height: 140px; color: #212529;">暂无数据</pre>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card panel-card mt-3">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0">数据预览</h6>
+                        <span class="small-hint" id="currentFilePathText">当前文件：未设置</span>
+                    </div>
+                    <div class="preview-wrap table-responsive">
+                        <table class="table table-sm table-striped table-hover mb-0" id="previewTable"></table>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mt-2" id="previewPager"></div>
+                </div>
+            </div>
+
+            <div class="wizard-nav mt-3 d-flex justify-content-between">
+                <button class="btn btn-outline-light" id="btnPrevStep">上一步</button>
+                <button class="btn btn-primary" id="btnNextStep">下一步</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<iframe id="aiChatWidgetFrame" class="chat-widget-frame" src="ai-chat-widget.html" title="AI 对话悬浮窗" allowtransparency="true"></iframe>
+
+<script src="assets/js/unsupervised.js"></script>
+</body>
+</html>
