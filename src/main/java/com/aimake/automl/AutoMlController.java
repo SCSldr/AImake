@@ -8,10 +8,10 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import java.io.IOException;
 import java.net.URI;
-import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * AutoML 主控制器，负责处理所有 API 请求。
@@ -19,7 +19,6 @@ import java.util.Map;
  * @author AImake
  */
 @RestController
-@RequestMapping("/api") // 所有接口统一添加 /api 前缀
 public class AutoMlController {
 
     private final AutoMlService autoMlService;
@@ -34,9 +33,11 @@ public class AutoMlController {
      * @param autoMlService AutoML 业务服务
      */
     @Autowired
-    public AutoMlController(AutoMlService autoMlService) {
+    public AutoMlController(AutoMlService autoMlService, org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping mapping) {
         this.autoMlService = autoMlService;
-        this.restTemplate = new RestTemplate(); // 创建 RestTemplate 实例用于 HTTP 通信
+        this.restTemplate = new RestTemplate();
+
+        mapping.getHandlerMethods().forEach((k, v) -> System.out.println("Mapped: " + k + " -> " + v));
     }
 
     /**
@@ -46,12 +47,38 @@ public class AutoMlController {
      *
      * @param file 上传的文件，通过 @RequestParam("file") 绑定
      * @return 返回一个包含 Excel 预览数据的列表
-     * @throws IOException 如果文件处理失败
      */
-    @PostMapping("/preview-excel")
-    public Map<String, Object> previewExcel(@RequestParam("file") MultipartFile file) throws IOException {
-        // 调用服务层方法处理文件并返回预览数据
-        return autoMlService.previewExcel(file);
+    @PostMapping("/api/preview-excel")
+    public ResponseEntity<Map<String, Object>> previewExcel(@RequestParam("file") MultipartFile file) {
+        String requestId = UUID.randomUUID().toString();
+        System.out.println("========== [上传请求] ==========");
+        System.out.println("  requestId: " + requestId);
+        System.out.println("✓ 请求已到达 /api/preview-excel");
+        System.out.println("  文件名: " + file.getOriginalFilename());
+        System.out.println("  文件大小: " + file.getSize() + " bytes");
+        System.out.println("  Content-Type: " + file.getContentType());
+        
+        try {
+            Map<String, Object> result = autoMlService.previewExcel(file);
+            result.put("requestId", requestId);
+            System.out.println("✓ Service 处理成功");
+            System.out.println("  返回数据: " + result);
+            System.out.println("========== [上传完成] ==========");
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            System.out.println("✗ Service 处理失败");
+            System.out.println("  错误信息: " + e.getMessage());
+            e.printStackTrace();
+            System.out.println("========== [上传失败] ==========");
+
+            Map<String, Object> errorBody = new LinkedHashMap<>();
+            errorBody.put("status", "error");
+            errorBody.put("stage", "preview-excel");
+            errorBody.put("requestId", requestId);
+            errorBody.put("message", e.getMessage());
+            errorBody.put("details", "文件预览失败，请检查文件格式、文件内容或查看后端日志 requestId。");
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorBody);
+        }
     }
 
     /**
@@ -64,7 +91,7 @@ public class AutoMlController {
      * @param request     HttpServletRequest 对象，用于获取请求的完整路径
      * @return 从 Python 服务返回的响应，类型为 ResponseEntity<String> 以便处理各种响应体
      */
-    @PostMapping("/**")
+    @PostMapping("/api/py/**")
     public ResponseEntity<String> proxyToPython(@RequestBody(required = false) String requestBody, HttpServletRequest request) {
         // 1. 获取并规范化当前请求路径，映射到 Python 实际路由
         String path = resolvePythonPath(request.getRequestURI());
@@ -78,6 +105,7 @@ public class AutoMlController {
             uriBuilder.query(request.getQueryString());
         }
         URI targetUri = uriBuilder.build(true).toUri();
+        System.out.println("Forwarding to Python: " + targetUri);
 
         // 3. 设置请求头
         // 这里我们只转发 Content-Type，可以根据需要添加更多需要透传的头信息
@@ -106,9 +134,9 @@ public class AutoMlController {
     private String resolvePythonPath(String requestUri) {
         String path = requestUri;
 
-        // 统一去掉 Java 网关前缀 /api
-        if (path.startsWith("/api")) {
-            path = path.substring(4);
+        // 去掉 Python 代理前缀 /api/py，拿到真实 Python endpoint
+        if (path.startsWith("/api/py")) {
+            path = path.substring(7);
             if (path.isEmpty()) {
                 path = "/";
             }
@@ -127,3 +155,4 @@ public class AutoMlController {
         };
     }
 }
+

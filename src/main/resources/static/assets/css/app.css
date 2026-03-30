@@ -15,7 +15,8 @@
 body {
     min-height: 100vh;
     color: var(--text-color);
-    background: linear-gradient(135deg, var(--background-start) 0%, var(--background-end) 100%);
+    background: url('../images/content.png') no-repeat center center fixed;
+    background-size: cover;
     font-family: "Microsoft YaHei", "SimHei", sans-serif;
 }
 
@@ -51,6 +52,32 @@ body {
     border-radius: 10px;
     padding: 10px 12px;
     font-size: 0.9rem;
+}
+
+.edu-guide {
+    border: 1px solid rgba(13, 110, 253, 0.25);
+    background: rgba(13, 110, 253, 0.06);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+}
+
+.edu-guide-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #1f4d96;
+    margin-bottom: 6px;
+}
+
+.edu-guide-list {
+    margin: 0;
+    padding-left: 1.1rem;
+    color: #2f3d53;
+    font-size: 0.9rem;
+}
+
+.edu-guide-list li + li {
+    margin-top: 4px;
 }
 
 .small-hint {

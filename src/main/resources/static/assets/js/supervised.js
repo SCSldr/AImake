@@ -6,16 +6,50 @@ const state = {
     featureFilePath: "",
     modelPath: "",
     targetColumn: "",
+    previewRows: [],
     previewColumns: [],
     totalRows: 0,
     currentPage: 1,
     pageSize: 10
 };
 
+const MIN_AI_ROWS = 20;
+const MAX_AI_ROWS = 100;
+const MAX_CUSTOM_HEADERS = 6;
+
 // ... (保留 showStep, stepNav, btnPrevStep, btnNextStep 的事件监听)
 
 // --- 聊天窗口通信 ---
 const aiChatWidgetFrame = document.getElementById("aiChatWidgetFrame");
+const chatDragState = {
+    dragging: false,
+    startX: 0,
+    startY: 0,
+    startLeft: 0,
+    startTop: 0
+};
+
+function clamp(value, min, max) {
+    return Math.min(Math.max(value, min), max);
+}
+
+function ensureFrameFreePosition() {
+    if (!aiChatWidgetFrame || aiChatWidgetFrame.dataset.freePosition === "1") return;
+    const rect = aiChatWidgetFrame.getBoundingClientRect();
+    aiChatWidgetFrame.style.left = `${Math.round(rect.left)}px`;
+    aiChatWidgetFrame.style.top = `${Math.round(rect.top)}px`;
+    aiChatWidgetFrame.style.right = "auto";
+    aiChatWidgetFrame.style.bottom = "auto";
+    aiChatWidgetFrame.dataset.freePosition = "1";
+}
+
+function moveFrameTo(left, top) {
+    if (!aiChatWidgetFrame) return;
+    const maxLeft = Math.max(0, window.innerWidth - aiChatWidgetFrame.offsetWidth);
+    const maxTop = Math.max(0, window.innerHeight - aiChatWidgetFrame.offsetHeight);
+    aiChatWidgetFrame.style.left = `${clamp(left, 0, maxLeft)}px`;
+    aiChatWidgetFrame.style.top = `${clamp(top, 0, maxTop)}px`;
+}
 
 /**
  * 向 AI 聊天窗口发送上下文信息。
@@ -34,8 +68,28 @@ function sendContextToChatWidget() {
  */
 window.addEventListener("message", (event) => {
     const data = event.data || {};
-    if (data.source !== "aiChatWidget" || data.type !== "toggle") return;
+    if (data.source !== "aiChatWidget") return;
     if (!aiChatWidgetFrame) return;
+
+    if (data.type === "drag") {
+        if (data.phase === "start") {
+            ensureFrameFreePosition();
+            chatDragState.dragging = true;
+            chatDragState.startX = Number(data.clientX) || 0;
+            chatDragState.startY = Number(data.clientY) || 0;
+            chatDragState.startLeft = parseFloat(aiChatWidgetFrame.style.left) || 0;
+            chatDragState.startTop = parseFloat(aiChatWidgetFrame.style.top) || 0;
+        } else if (data.phase === "move" && chatDragState.dragging) {
+            const dx = (Number(data.clientX) || 0) - chatDragState.startX;
+            const dy = (Number(data.clientY) || 0) - chatDragState.startY;
+            moveFrameTo(chatDragState.startLeft + dx, chatDragState.startTop + dy);
+        } else if (data.phase === "end") {
+            chatDragState.dragging = false;
+        }
+        return;
+    }
+
+    if (data.type !== "toggle") return;
 
     if (data.isPanelVisible) {
         // 展开
@@ -45,6 +99,13 @@ window.addEventListener("message", (event) => {
         // 收起
         aiChatWidgetFrame.style.width = "58px"; // 修正尺寸
         aiChatWidgetFrame.style.height = "58px"; // 修正尺寸
+    }
+
+    // 如果已经拖动过，窗口尺寸变化后重新约束一次边界，避免跑出可视区
+    if (aiChatWidgetFrame.dataset.freePosition === "1") {
+        const left = parseFloat(aiChatWidgetFrame.style.left) || 0;
+        const top = parseFloat(aiChatWidgetFrame.style.top) || 0;
+        moveFrameTo(left, top);
     }
 });
 
@@ -65,12 +126,59 @@ function setFilePath(path) {
 // ==============================================================================
 const stepIds = ["step1", "step2", "step3", "step4", "step5"];
 let currentStepIndex = 0;
+const stepCompletion = {
+    step1: false,
+    step2Cleaned: false,
+    step2Featured: false,
+    step3: false,
+    step4: false
+};
 
 const stepNav = document.getElementById("stepNav");
 const previewTable = document.getElementById("previewTable");
 const currentFilePathText = document.getElementById("currentFilePathText");
 const previewPager = document.getElementById("previewPager");
 const step1Error = document.getElementById("step1Error");
+
+function isCurrentStepCompleted(index) {
+    switch (index) {
+        case 0:
+            return stepCompletion.step1;
+        case 1:
+            return stepCompletion.step2Cleaned && stepCompletion.step2Featured;
+        case 2:
+            return stepCompletion.step3;
+        case 3:
+            return stepCompletion.step4;
+        default:
+            return true;
+    }
+}
+
+function updateStepControls() {
+    const prevBtn = document.getElementById("btnPrevStep");
+    const nextBtn = document.getElementById("btnNextStep");
+    prevBtn.disabled = currentStepIndex === 0;
+    nextBtn.disabled = currentStepIndex === stepIds.length - 1 || !isCurrentStepCompleted(currentStepIndex);
+}
+
+function invalidateFrom(stepIndex) {
+    if (stepIndex <= 1) {
+        stepCompletion.step2Cleaned = false;
+        stepCompletion.step2Featured = false;
+    }
+    if (stepIndex <= 2) {
+        stepCompletion.step3 = false;
+        state.splitTrainPath = "";
+        state.splitTestPath = "";
+        const splitResult = document.getElementById("splitResult");
+        if (splitResult) splitResult.textContent = "";
+    }
+    if (stepIndex <= 3) {
+        stepCompletion.step4 = false;
+        state.modelPath = "";
+    }
+}
 
 function showStep(index) {
     currentStepIndex = Math.max(0, Math.min(index, stepIds.length - 1));
@@ -83,8 +191,7 @@ function showStep(index) {
         btn.classList.toggle("active", i === currentStepIndex);
     });
 
-    document.getElementById("btnPrevStep").disabled = currentStepIndex === 0;
-    document.getElementById("btnNextStep").disabled = currentStepIndex === stepIds.length - 1;
+    updateStepControls();
 }
 
 stepNav.addEventListener("click", (e) => {
@@ -93,7 +200,21 @@ stepNav.addEventListener("click", (e) => {
     if (idx >= 0) showStep(idx);
 });
 document.getElementById("btnPrevStep").addEventListener("click", () => showStep(currentStepIndex - 1));
-document.getElementById("btnNextStep").addEventListener("click", () => showStep(currentStepIndex + 1));
+document.getElementById("btnNextStep").addEventListener("click", () => {
+    if (!isCurrentStepCompleted(currentStepIndex)) {
+        if (currentStepIndex === 0) {
+            alert("请先完成第一步（上传或AI生成数据）");
+        } else if (currentStepIndex === 1) {
+            alert("请先完成数据清洗和特征工程");
+        } else if (currentStepIndex === 2) {
+            alert("请先完成训练测试集划分");
+        } else if (currentStepIndex === 3) {
+            alert("请先完成模型训练");
+        }
+        return;
+    }
+    showStep(currentStepIndex + 1);
+});
 
 function withLoading(buttonEl, actionText, loadingText, fn) {
     const oldText = buttonEl.textContent;
@@ -151,11 +272,22 @@ function getSelectedFeatures() {
 }
 
 function renderPreviewTable(payload) {
-    const columns = Array.isArray(payload?.columns)
+    const previewInfo = payload?.preview_info || (payload?.preview && !Array.isArray(payload.preview) ? payload.preview : null);
+    const normalizedRows = Array.isArray(payload?.preview)
+        ? payload.preview
+        : (Array.isArray(previewInfo?.preview) ? previewInfo.preview : []);
+    const normalizedColumns = Array.isArray(payload?.columns)
         ? payload.columns
-        : (Array.isArray(payload?.preview) && payload.preview.length ? Object.keys(payload.preview[0]) : []);
-    state.previewColumns = columns;
-    state.totalRows = Number(payload?.total_rows ?? (Array.isArray(payload?.preview) ? payload.preview.length : 0));
+        : (Array.isArray(previewInfo?.columns) ? previewInfo.columns : null);
+
+    state.previewRows = normalizedRows;
+    state.previewColumns = Array.isArray(normalizedColumns)
+        ? normalizedColumns
+        : (normalizedRows.length ? Object.keys(normalizedRows[0]) : []);
+    state.totalRows = Number(payload?.total_rows ?? previewInfo?.shape?.rows ?? normalizedRows.length);
+    if (state.previewRows.length > 0) {
+        state.totalRows = state.previewRows.length;
+    }
     state.currentPage = 1;
 
     if (!state.previewColumns.length) {
@@ -164,17 +296,30 @@ function renderPreviewTable(payload) {
         return;
     }
 
-    const thead = `<thead><tr>${state.previewColumns.map(c => `<th>${escapeHtml(c)}</th>`).join("")}</tr></thead>`;
-    const tbody = `<tbody><tr><td colspan="${state.previewColumns.length}" class="small-hint">共 ${state.totalRows} 行（仅展示表头）</td></tr></tbody>`;
-    previewTable.innerHTML = thead + tbody;
+    renderPreviewPage();
     renderPager();
     renderFeatureCheckbox(state.previewColumns);
 }
 
+function renderPreviewPage() {
+    if (!state.previewColumns.length) return;
+    const startIndex = (state.currentPage - 1) * state.pageSize;
+    const endIndex = startIndex + state.pageSize;
+    const pageRows = state.previewRows.slice(startIndex, endIndex);
+
+    const thead = `<thead><tr>${state.previewColumns.map(c => `<th>${escapeHtml(c)}</th>`).join("")}</tr></thead>`;
+    const tbodyRows = pageRows.length
+        ? pageRows.map(row => `<tr>${state.previewColumns.map(col => `<td>${escapeHtml(row?.[col])}</td>`).join("")}</tr>`).join("")
+        : `<tr><td colspan="${state.previewColumns.length}" class="small-hint">本页暂无数据</td></tr>`;
+    previewTable.innerHTML = `${thead}<tbody>${tbodyRows}</tbody>`;
+}
+
 function renderPager() {
     const totalPages = Math.max(1, Math.ceil(state.totalRows / state.pageSize));
+    const start = state.totalRows === 0 ? 0 : ((state.currentPage - 1) * state.pageSize + 1);
+    const end = Math.min(state.currentPage * state.pageSize, state.totalRows);
     previewPager.innerHTML = `
-        <div class="small-hint">总行数 ${state.totalRows}，分页参考 ${totalPages} 页（每页 ${state.pageSize} 行）</div>
+        <div class="small-hint">第 ${state.currentPage}/${totalPages} 页，显示 ${start}-${end} 行（共 ${state.totalRows} 行）</div>
         <div class="d-flex gap-2">
             <button class="btn btn-sm btn-outline-light" id="pagerPrev" ${state.currentPage <= 1 ? "disabled" : ""}>上一页</button>
             <button class="btn btn-sm btn-outline-light" id="pagerNext" ${state.currentPage >= totalPages ? "disabled" : ""}>下一页</button>
@@ -182,8 +327,25 @@ function renderPager() {
     `;
     const prev = document.getElementById("pagerPrev");
     const next = document.getElementById("pagerNext");
-    if (prev) prev.addEventListener("click", () => { state.currentPage = Math.max(1, state.currentPage - 1); renderPager(); });
-    if (next) next.addEventListener("click", () => { state.currentPage = Math.min(totalPages, state.currentPage + 1); renderPager(); });
+    if (prev) prev.addEventListener("click", () => { state.currentPage = Math.max(1, state.currentPage - 1); renderPreviewPage(); renderPager(); });
+    if (next) next.addEventListener("click", () => { state.currentPage = Math.min(totalPages, state.currentPage + 1); renderPreviewPage(); renderPager(); });
+}
+
+function parseCustomHeaders(rawValue) {
+    const headers = (rawValue || "")
+        .split(",")
+        .map(v => v.trim())
+        .filter(Boolean);
+    const uniqueHeaders = [...new Set(headers)];
+    if (uniqueHeaders.length > MAX_CUSTOM_HEADERS) {
+        throw new Error(`自定义表头最多 ${MAX_CUSTOM_HEADERS} 个`);
+    }
+    return uniqueHeaders;
+}
+
+function buildGeneratePrompt(prompt, customHeaders) {
+    if (!customHeaders.length) return prompt;
+    return `${prompt}\n\n请严格使用以下 CSV 表头且顺序一致：${customHeaders.join(",")}。不要新增、删除或改名。`;
 }
 
 function clearStep1Error() {
@@ -202,38 +364,104 @@ document.getElementById("btnPreviewExcel").addEventListener("click", async (e) =
     const file = document.getElementById("excelFile").files[0];
     clearStep1Error();
     if (!file) {
+
         showStep1Error("请先选择 Excel 文件（.xlsx/.xls）");
         return;
     }
 
+    console.log("========== [前端上传开始] ==========");
+    console.log("✓ 文件已选择");
+    console.log("  文件名:", file.name);
+    console.log("  文件大小:", file.size, "bytes");
+    console.log("  文件类型:", file.type);
+
     await withLoading(button, "上传并预览", "处理中...", async () => {
         const formData = new FormData();
         formData.append("file", file);
-        const response = await fetch("/api/preview-excel", { method: "POST", body: formData });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(parseErrorMessage(data, response.status, "上传失败"));
-        if (data && data.status === "error") throw new Error(parseErrorMessage(data, response.status, "解析失败"));
+        
+        console.log("✓ FormData 已准备，准备发送 POST 请求...");
+        console.log("URL:/api/preview-excel");
+        
+        try {
+            const response = await fetch("/api/preview-excel", { method: "POST", body: formData });
+            console.log("✓ 收到后端响应");
+            console.log("  状态码:", response.status);
+            console.log("  Content-Type:", response.headers.get("Content-Type"));
+            
+            const data = await response.json().catch((err) => {
+                console.error("✗ JSON 解析失败:", err.message);
+                return {};
+            });
+            
+            console.log("✓ 响应 JSON 已解析");
+            console.log("  响应内容:", JSON.stringify(data, null, 2));
+            
+            if (!response.ok) {
+                console.error("✗ 响应状态不正常");
+                throw new Error(parseErrorMessage(data, response.status, "上传失败"));
+            }
+            if (data && data.status === "error") {
+                console.error("✗ 后端返回错误状态");
+                throw new Error(parseErrorMessage(data, response.status, "解析失败"));
+            }
 
-        renderPreviewTable(data);
-        setFilePath(data.file_path || `temp/${file.name}`);
-    }).catch((err) => showStep1Error(`第一步失败：${err.message}`));
+            console.log("✓ 所有检查通过，准备渲染表格");
+            renderPreviewTable(data);
+            setFilePath(data.file_path || `temp/${file.name}`);
+            stepCompletion.step1 = true;
+            invalidateFrom(1);
+            updateStepControls();
+            console.log("✓ 表格渲染完成");
+            console.log("========== [前端上传成功] ==========");
+        } catch (fetchErr) {
+            console.error("✗ fetch 请求出错:", fetchErr.message);
+            throw fetchErr;
+        }
+    }).catch((err) => {
+        console.error("========== [前端上传失败] ==========");
+        console.error("错误信息:", err.message);
+        showStep1Error(`第一步失败：${err.message}（详情见控制台日志）`);
+    });
 });
 
 // Step1 AI 生成
 document.getElementById("btnGenerateData").addEventListener("click", async (e) => {
     const button = e.target;
     const prompt = document.getElementById("aiPrompt").value.trim();
-    const rowCount = Number(document.getElementById("aiRowCount").value || 20);
+    const rowCountInput = Number(document.getElementById("aiRowCount").value || MIN_AI_ROWS);
     if (!prompt) {
         showStep1Error("请先输入 AI 生成需求");
         return;
     }
+    const rowCount = Math.floor(rowCountInput);
+    if (!Number.isFinite(rowCount) || rowCount < MIN_AI_ROWS || rowCount > MAX_AI_ROWS) {
+        showStep1Error(`生成行数必须在 ${MIN_AI_ROWS}~${MAX_AI_ROWS} 之间`);
+        return;
+    }
+
+    let customHeaders = [];
+    try {
+        customHeaders = parseCustomHeaders(document.getElementById("aiCustomHeaders").value);
+    } catch (err) {
+        showStep1Error(err.message);
+        return;
+    }
+
     clearStep1Error();
 
     await withLoading(button, "AI 生成并预览", "处理中...", async () => {
-        const data = await postJson("/api/generate-data", { prompt, row_count: rowCount, rowCount }, "AI 生成失败");
+        const finalPrompt = buildGeneratePrompt(prompt, customHeaders);
+        const data = await postJson("/api/py/generate-data", {
+            prompt: finalPrompt,
+            custom_headers: customHeaders,
+            row_count: rowCount,
+            rowCount
+        }, "AI 生成失败");
         if (data.file_path) setFilePath(data.file_path);
         renderPreviewTable(data);
+        stepCompletion.step1 = true;
+        invalidateFrom(1);
+        updateStepControls();
     }).catch((err) => showStep1Error(`AI 生成失败：${err.message}`));
 });
 
@@ -243,9 +471,13 @@ document.getElementById("btnCleanData").addEventListener("click", async (e) => {
     if (!state.currentFilePath) return alert("请先完成第一步");
 
     await withLoading(button, "一键清洗", "处理中...", async () => {
-        const data = await postJson("/api/clean-data", { file_path: state.currentFilePath }, "数据清洗失败");
+        const data = await postJson("/api/py/clean-data", { file_path: state.currentFilePath }, "数据清洗失败");
         setFilePath(data.cleaned_file_path || data.file_path || state.currentFilePath);
         renderPreviewTable(data);
+        stepCompletion.step2Cleaned = true;
+        stepCompletion.step2Featured = false;
+        invalidateFrom(2);
+        updateStepControls();
     }).catch((err) => alert("清洗失败：" + err.message));
 });
 
@@ -256,13 +488,16 @@ document.getElementById("btnProcessFeatures").addEventListener("click", async (e
     if (!selectedFeatures.length) return alert("请至少选择一个特征列");
 
     await withLoading(button, "执行特征工程", "处理中...", async () => {
-        const data = await postJson("/api/process-features", {
+        const data = await postJson("/api/py/process-features", {
             file_path: state.currentFilePath,
             categorical_features: selectedFeatures
         }, "特征工程失败");
         state.featureFilePath = data.feature_file_path || data.file_path || state.currentFilePath;
         setFilePath(state.featureFilePath);
         renderPreviewTable(data);
+        stepCompletion.step2Featured = true;
+        invalidateFrom(2);
+        updateStepControls();
     }).catch((err) => alert("特征处理失败：" + err.message));
 });
 
@@ -275,7 +510,7 @@ document.getElementById("btnSplitData").addEventListener("click", async (e) => {
     const randomState = Number(document.getElementById("randomState").value || 42);
 
     await withLoading(button, "执行划分", "处理中...", async () => {
-        const data = await postJson("/api/process/split", {
+        const data = await postJson("/api/py/process/split", {
             file_path: state.currentFilePath,
             test_size: testSize,
             random_state: randomState
@@ -283,6 +518,9 @@ document.getElementById("btnSplitData").addEventListener("click", async (e) => {
         state.splitTrainPath = data.train_file_path || "";
         state.splitTestPath = data.test_file_path || "";
         document.getElementById("splitResult").textContent = `划分完成：训练集 ${state.splitTrainPath}，测试集 ${state.splitTestPath}`;
+        stepCompletion.step3 = true;
+        invalidateFrom(3);
+        updateStepControls();
     }).catch((err) => alert("划分失败：" + err.message));
 });
 
@@ -297,13 +535,15 @@ document.getElementById("btnTrainModel").addEventListener("click", async (e) => 
     if (!trainPath) return alert("请先准备训练数据");
 
     await withLoading(button, "开始训练", "处理中...", async () => {
-        const data = await postJson("/api/train-manual", {
+        const data = await postJson("/api/py/train-manual", {
             file_path: trainPath,
             target_column: targetColumn,
             model_type: modelType
         }, "模型训练失败");
         state.modelPath = data.model_path || "";
         state.targetColumn = targetColumn;
+        stepCompletion.step4 = true;
+        updateStepControls();
         alert("训练完成");
     }).catch((err) => alert("训练失败：" + err.message));
 });
@@ -316,7 +556,7 @@ document.getElementById("btnEvaluate").addEventListener("click", async (e) => {
     if (!state.targetColumn) return alert("请先填写并训练目标列");
 
     await withLoading(button, "测试集检测", "处理中...", async () => {
-        const data = await postJson("/api/model/evaluate", {
+        const data = await postJson("/api/py/model/evaluate", {
             model_path: state.modelPath,
             test_file_path: state.splitTestPath,
             target_column: state.targetColumn
@@ -344,7 +584,7 @@ document.getElementById("btnManualPredict").addEventListener("click", async (e) 
     }
 
     await withLoading(button, "执行手动预测", "处理中...", async () => {
-        const data = await postJson("/api/model/predict_manual", {
+        const data = await postJson("/api/py/model/predict_manual", {
             model_path: state.modelPath,
             manual_features: manualFeatures
         }, "手动预测失败");

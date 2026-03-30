@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AImake - 有监督学习</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="assets/css/app.css?v=1.2" rel="stylesheet">
+</head>
+<body>
+<div class="container-fluid py-3">
+    <div class="d-flex align-items-center justify-content-between mb-3 tech-navbar">
+        <a href="home.html" class="btn btn-outline-secondary btn-sm">← 返回主菜单</a>
+        <h3 class="tech-title mb-0">有监督学习工作台</h3>
+        <span class="badge bg-primary-subtle text-primary">Java + Python + HTML</span>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-12 col-xl-2">
+            <div class="card panel-card h-100">
+                <div class="card-body">
+                    <h6 class="panel-title mb-3">流程导航</h6>
+                    <div class="list-group step-nav" id="stepNav">
+                        <button class="list-group-item list-group-item-action active" data-step="step1">1. 数据准备</button>
+                        <button class="list-group-item list-group-item-action" data-step="step2">2. 预处理</button>
+                        <button class="list-group-item list-group-item-action" data-step="step3">3. 训练测试划分</button>
+                        <button class="list-group-item list-group-item-action" data-step="step4">4. 模型训练</button>
+                        <button class="list-group-item list-group-item-action" data-step="step5">5. 检测与预测</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-xl-10">
+            <div class="card panel-card mb-3 step-panel" id="step1">
+                <div class="card-body">
+                    <h5 class="panel-title">1. 数据准备</h5>
+                    <p class="small-hint">先上传 Excel，或者让 AI 生成训练数据。</p>
+                    <div class="edu-note mb-3">知识点：高质量样本是模型效果的基础，特征字段建议语义清晰、缺失值尽量少。</div>
+                    <div class="edu-guide">
+                        <div class="edu-guide-title">教程：这一步在做什么</div>
+                        <ul class="edu-guide-list">
+                            <li>训练数据里的每一行都代表一个案例，包含特征和目标标签。</li>
+                            <li>目标标签是有监督学习的关键，没有标签就无法训练分类或回归模型。</li>
+                            <li>建议优先使用业务真实数据，再用 AI 生成样例补充边界场景。</li>
+                        </ul>
+                    </div>
+                    <div id="step1Error" class="alert alert-danger d-none mb-3"></div>
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label">上传 Excel 文件</label>
+                            <div class="input-group">
+                                <input type="file" class="form-control" id="excelFile" accept=".xlsx,.xls">
+                                <button class="btn btn-primary" id="btnPreviewExcel">上传并预览</button>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">AI 生成需求</label>
+                            <textarea id="aiPrompt" class="form-control" rows="2" placeholder="例如：生成一份用户流失预测数据"></textarea>
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label class="form-label">生成行数</label>
+                            <input type="number" class="form-control" id="aiRowCount" value="20" min="20" max="100">
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <label class="form-label" for="aiCustomHeaders">自定义表头（可选，逗号分隔，最多6个）</label>
+                            <input type="text" class="form-control" id="aiCustomHeaders" placeholder="例如：user_id,age,income,label">
+                        </div>
+                        <div class="col-12 d-flex">
+                            <button class="btn btn-outline-primary" id="btnGenerateData">AI 生成并预览</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card panel-card mb-3 step-panel" id="step2">
+                <div class="card-body">
+                    <h5 class="panel-title">2. 数据预处理</h5>
+                    <p class="small-hint">先一键清洗，再按需做特征工程。</p>
+                    <div class="edu-note mb-3">知识点：预处理是把脏数据变成可学习数据，缺失值处理和特征工程会直接影响泛化能力。</div>
+                    <div class="edu-guide">
+                        <div class="edu-guide-title">教程：为什么要预处理</div>
+                        <ul class="edu-guide-list">
+                            <li>原始数据通常有缺失、异常和格式不统一问题，不处理会让模型学到噪声。</li>
+                            <li>一键清洗会先移除不完整样本，再过滤明显异常值，提高数据稳定性。</li>
+                            <li>特征工程会把原始字段转换成模型更容易利用的特征表示。</li>
+                        </ul>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 mb-3">
+                        <button class="btn btn-warning" id="btnCleanData">一键清洗</button>
+                    </div>
+                    <div class="border rounded-3 p-3 border-info-subtle">
+                        <h6>特征工程</h6>
+                        <div class="mb-2">
+                            <label class="form-label">手动输入特征列（逗号分隔）</label>
+                            <input type="text" class="form-control" id="featureInput" placeholder="例如：age,income,score">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">或勾选特征列</label>
+                            <div id="featureCheckboxWrap" class="d-flex flex-wrap gap-2"></div>
+                        </div>
+                        <button class="btn btn-outline-success" id="btnProcessFeatures">执行特征工程</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card panel-card mb-3 step-panel" id="step3">
+                <div class="card-body">
+                    <h5 class="panel-title">3. 训练测试集划分</h5>
+                    <p class="small-hint">先把数据分成训练集和测试集，后续评估才能客观。</p>
+                    <div class="edu-note mb-3">知识点：训练集用于学习，测试集用于验证泛化能力，常见划分比例是 8:2 或 7:3。</div>
+                    <div class="edu-guide">
+                        <div class="edu-guide-title">教程：划分背后的原理</div>
+                        <ul class="edu-guide-list">
+                            <li>训练集用于学习规律，测试集用于检查模型是否能泛化到新样本。</li>
+                            <li>如果只看训练集准确率，容易出现过拟合，课堂演示会产生误导。</li>
+                            <li>随机种子用于复现结果，方便教学对比不同模型的表现。</li>
+                        </ul>
+                    </div>
+                    <div class="row g-3 align-items-end">
+                        <div class="col-12 col-md-4">
+                            <label class="form-label">测试集比例</label>
+                            <input type="number" class="form-control" id="testSize" value="0.2" min="0.1" max="0.5" step="0.1">
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label class="form-label">随机种子</label>
+                            <input type="number" class="form-control" id="randomState" value="42" min="0">
+                        </div>
+                        <div class="col-12 col-md-4 d-grid">
+                            <button class="btn btn-outline-primary" id="btnSplitData">执行划分</button>
+                        </div>
+                    </div>
+                    <div id="splitResult" class="small-hint mt-3"></div>
+                </div>
+            </div>
+
+            <div class="card panel-card mb-3 step-panel" id="step4">
+                <div class="card-body">
+                    <h5 class="panel-title">4. 模型训练</h5>
+                    <p class="small-hint">填写目标列，选择模型后开始训练。</p>
+                    <div class="edu-note mb-3">知识点：随机森林抗过拟合能力强，KNN直观但对尺度敏感，逻辑回归可解释性好。</div>
+                    <div class="edu-guide">
+                        <div class="edu-guide-title">教程：模型怎么选</div>
+                        <ul class="edu-guide-list">
+                            <li>随机森林适合作为默认起点，通常在表格数据上有较稳表现。</li>
+                            <li>KNN依赖距离计算，对数据尺度敏感，适合做算法原理演示。</li>
+                            <li>逻辑回归可解释性较好，适合讲解特征对预测结果的影响方向。</li>
+                        </ul>
+                    </div>
+                    <div class="row g-3 align-items-end">
+                        <div class="col-12 col-md-4">
+                            <label class="form-label">目标列名</label>
+                            <input type="text" class="form-control" id="targetColumn" placeholder="例如：label">
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label class="form-label">模型类型</label>
+                            <select id="modelType" class="form-select">
+                                <option value="random_forest">随机森林</option>
+                                <option value="knn">KNN</option>
+                                <option value="logistic_regression">逻辑回归</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-4 d-grid">
+                            <button class="btn btn-success" id="btnTrainModel">开始训练</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card panel-card step-panel" id="step5">
+                <div class="card-body">
+                    <h5 class="panel-title">5. 检测与预测</h5>
+                    <p class="small-hint">先做测试集检测，再做手动输入预测。</p>
+                    <div class="edu-note mb-3">知识点：检测用于验证模型稳定性，手动输入预测用于模拟真实业务场景。</div>
+                    <div class="edu-guide">
+                        <div class="edu-guide-title">教程：如何解读结果</div>
+                        <ul class="edu-guide-list">
+                            <li>先看测试集检测指标，确认模型在未见过数据上的表现是否可接受。</li>
+                            <li>再做手动输入预测，模拟真实系统收到一条新数据后的推理流程。</li>
+                            <li>若结果异常，优先检查输入 JSON 键名是否和训练阶段特征完全一致。</li>
+                        </ul>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 mb-3">
+                        <button class="btn btn-info text-white" id="btnEvaluate">测试集检测</button>
+                    </div>
+                    <div id="evaluateResult" class="small-hint mb-3"></div>
+
+                    <div class="border rounded-3 p-3 border-info-subtle">
+                        <h6 class="mb-2">用户手动输入预测</h6>
+                        <label class="form-label">输入 JSON（键为特征名，值为特征值）</label>
+                        <textarea class="form-control" id="manualPredictInput" rows="4" placeholder='例如：{"age": 35, "income": 12000, "score": 88}'></textarea>
+                        <div class="mt-2 d-grid">
+                            <button class="btn btn-outline-success" id="btnManualPredict">执行手动预测</button>
+                        </div>
+                        <div id="manualPredictResult" class="small-hint mt-3"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card panel-card mt-3">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0">数据预览</h6>
+                        <span class="small-hint" id="currentFilePathText">当前文件：未设置</span>
+                    </div>
+                    <div class="preview-wrap table-responsive">
+                        <table class="table table-sm table-striped table-hover mb-0" id="previewTable"></table>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mt-2" id="previewPager"></div>
+                </div>
+            </div>
+
+            <div class="wizard-nav mt-3 d-flex justify-content-between">
+                <button class="btn btn-outline-light" id="btnPrevStep">上一步</button>
+                <button class="btn btn-primary" id="btnNextStep">下一步</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<iframe id="aiChatWidgetFrame" class="chat-widget-frame" src="ai-chat-widget.html" title="AI 对话悬浮窗" allowtransparency="true"></iframe>
+
+<script src="assets/js/supervised.js"></script>
+</body>
+</html>

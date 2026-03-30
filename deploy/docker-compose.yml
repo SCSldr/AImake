@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  # AImake FastAPI 服务
+  aimake:
+    build: .
+    container_name: aimake-app
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./temp:/app/temp
+      - ./models:/app/models
+    environment:
+      - VOLC_API_KEY=${VOLC_API_KEY}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+

@@ -1,0 +1,392 @@
+{
+  "api_guide": {
+    "title": "AImake API 完整指南",
+    "base_url": "http://localhost:8000",
+    "version": "1.0.0",
+    "endpoints": {
+      "health": {
+        "method": "GET",
+        "path": "/health",
+        "description": "系统健康检查",
+        "parameters": {},
+        "example": {
+          "request": "curl http://localhost:8000/health",
+          "response": {
+            "status": "healthy",
+            "timestamp": "2026-03-29T10:30:00",
+            "temp_dir_exists": true,
+            "models_dir_exists": true
+          }
+        }
+      },
+      "root": {
+        "method": "GET",
+        "path": "/",
+        "description": "API 入口，显示所有可用接口",
+        "parameters": {},
+        "example": {
+          "request": "curl http://localhost:8000/",
+          "response": {
+            "title": "AImake - 机器学习后端服务",
+            "endpoints": {
+              "健康检查": "GET /health",
+              "数据生成": "POST /process/generate"
+            }
+          }
+        }
+      },
+      "check_llm_connection": {
+        "method": "POST",
+        "path": "/process/check_llm_connection",
+        "description": "测试火山引擎大模型连通性",
+        "requires_api_key": true,
+        "parameters": {},
+        "example": {
+          "request": "curl -X POST http://localhost:8000/process/check_llm_connection",
+          "response": {
+            "status": "success",
+            "message": "大模型连接成功",
+            "model": "doubao-seed-2-0-mini-260215",
+            "response": "连接成功"
+          }
+        }
+      },
+      "generate": {
+        "method": "POST",
+        "path": "/process/generate",
+        "description": "调用大模型生成 CSV 数据",
+        "requires_api_key": true,
+        "parameters": {
+          "prompt": {
+            "type": "string",
+            "description": "数据生成的具体需求",
+            "example": "生成100行电商用户行为数据，包含用户ID、年龄、购买金额"
+          },
+          "row_count": {
+            "type": "integer",
+            "description": "需要生成的数据行数",
+            "default": 10,
+            "example": 100
+          }
+        },
+        "example": {
+          "request": {
+            "prompt": "生成电商数据",
+            "row_count": 50
+          },
+          "response": {
+            "status": "success",
+            "file_path": "temp/data_20260329_103000_123456.csv",
+            "preview": {
+              "shape": {
+                "rows": 50,
+                "cols": 4
+              },
+              "columns": ["user_id", "age", "amount", "category"]
+            }
+          }
+        }
+      },
+      "clean": {
+        "method": "POST",
+        "path": "/process/clean",
+        "description": "数据清洗（删除缺失值）",
+        "parameters": {
+          "file_path": {
+            "type": "string",
+            "description": "输入文件的相对路径（相对于项目根目录）",
+            "example": "temp/data_20260329_103000.csv"
+          },
+          "drop_columns": {
+            "type": "array",
+            "description": "可选，要删除的列名",
+            "example": ["error_column", "unused_col"]
+          }
+        },
+        "example": {
+          "request": {
+            "file_path": "temp/data_20260329_103000.csv"
+          },
+          "response": {
+            "status": "success",
+            "cleaned_file_path": "temp/data_20260329_103100.csv",
+            "statistics": {
+              "original_rows": 100,
+              "cleaned_rows": 95,
+              "rows_removed": 5
+            }
+          }
+        }
+      },
+      "features": {
+        "method": "POST",
+        "path": "/process/features",
+        "description": "特征工程（独热编码）",
+        "parameters": {
+          "file_path": {
+            "type": "string",
+            "description": "输入文件路径",
+            "example": "temp/data_20260329_103100.csv"
+          },
+          "categorical_features": {
+            "type": "array",
+            "description": "需要进行独热编码的列名",
+            "example": ["category", "gender", "region"]
+          }
+        },
+        "example": {
+          "request": {
+            "file_path": "temp/data_20260329_103100.csv",
+            "categorical_features": ["category", "gender"]
+          },
+          "response": {
+            "status": "success",
+            "feature_file_path": "temp/data_20260329_103200.csv",
+            "encoding_info": {
+              "new_columns": ["age", "amount", "category_A", "category_B", "gender_M", "gender_F"]
+            }
+          }
+        }
+      },
+      "split": {
+        "method": "POST",
+        "path": "/process/split",
+        "description": "数据划分（训练集/测试集）",
+        "parameters": {
+          "file_path": {
+            "type": "string",
+            "description": "输入文件路径",
+            "example": "temp/data_features.csv"
+          },
+          "test_size": {
+            "type": "number",
+            "description": "测试集比例（0-1）",
+            "default": 0.2,
+            "example": 0.2
+          },
+          "random_state": {
+            "type": "integer",
+            "description": "随机种子，保证可重复性",
+            "default": 42,
+            "example": 42
+          }
+        },
+        "example": {
+          "request": {
+            "file_path": "temp/data_features.csv",
+            "test_size": 0.2
+          },
+          "response": {
+            "status": "success",
+            "train_file_path": "temp/train_20260329_103300.csv",
+            "test_file_path": "temp/test_20260329_103300.csv",
+            "statistics": {
+              "total_rows": 100,
+              "train_rows": 80,
+              "test_rows": 20
+            }
+          }
+        }
+      },
+      "train_manual": {
+        "method": "POST",
+        "path": "/model/train_manual",
+        "description": "训练机器学习模型",
+        "parameters": {
+          "file_path": {
+            "type": "string",
+            "description": "训练数据文件路径",
+            "example": "temp/train_20260329_103300.csv"
+          },
+          "target_column": {
+            "type": "string",
+            "description": "目标列的列名",
+            "example": "price"
+          },
+          "model_type": {
+            "type": "string",
+            "description": "模型类型",
+            "enum": ["random_forest", "knn", "logistic_regression"],
+            "example": "random_forest"
+          },
+          "test_size": {
+            "type": "number",
+            "description": "测试集比例",
+            "default": 0.2
+          },
+          "random_state": {
+            "type": "integer",
+            "description": "随机种子",
+            "default": 42
+          }
+        },
+        "example": {
+          "request": {
+            "file_path": "temp/train_20260329_103300.csv",
+            "target_column": "price",
+            "model_type": "random_forest"
+          },
+          "response": {
+            "status": "success",
+            "model_path": "models/model_random_forest_20260329_103400.joblib",
+            "accuracy": {
+              "train": 0.95,
+              "test": 0.92
+            },
+            "train_cols": ["age", "category_A", "category_B"],
+            "data_info": {
+              "total_rows": 80,
+              "feature_count": 3
+            }
+          }
+        }
+      },
+      "evaluate": {
+        "method": "POST",
+        "path": "/model/evaluate",
+        "description": "使用测试集评估模型",
+        "parameters": {
+          "model_path": {
+            "type": "string",
+            "description": "模型文件路径",
+            "example": "models/model_random_forest_20260329_103400.joblib"
+          },
+          "test_file_path": {
+            "type": "string",
+            "description": "测试数据文件路径",
+            "example": "temp/test_20260329_103300.csv"
+          },
+          "target_column": {
+            "type": "string",
+            "description": "目标列的列名",
+            "example": "price"
+          }
+        },
+        "example": {
+          "request": {
+            "model_path": "models/model_random_forest_20260329_103400.joblib",
+            "test_file_path": "temp/test_20260329_103300.csv",
+            "target_column": "price"
+          },
+          "response": {
+            "status": "success",
+            "accuracy": 0.92,
+            "total_samples": 20,
+            "correct_predictions": 18
+          }
+        }
+      },
+      "predict_manual": {
+        "method": "POST",
+        "path": "/model/predict_manual",
+        "description": "使用模型进行预测（自动对齐特征列）",
+        "parameters": {
+          "model_path": {
+            "type": "string",
+            "description": "模型文件路径",
+            "example": "models/model_random_forest_20260329_103400.joblib"
+          },
+          "data_file_path": {
+            "type": "string",
+            "description": "待预测数据文件路径",
+            "example": "temp/new_data.csv"
+          }
+        },
+        "example": {
+          "request": {
+            "model_path": "models/model_random_forest_20260329_103400.joblib",
+            "data_file_path": "temp/new_data.csv"
+          },
+          "response": {
+            "status": "success",
+            "total_predictions": 50,
+            "prediction_file_path": "temp/predictions_20260329_103500.csv",
+            "sample_predictions": [
+              {"prediction": 105},
+              {"prediction": 98}
+            ]
+          }
+        }
+      },
+      "clustering": {
+        "method": "POST",
+        "path": "/clustering/train_and_visualize",
+        "description": "K-Means 聚类和可视化",
+        "parameters": {
+          "file_path": {
+            "type": "string",
+            "description": "数据文件路径",
+            "example": "temp/data_features.csv"
+          },
+          "n_clusters": {
+            "type": "integer",
+            "description": "聚类簇数",
+            "default": 3,
+            "example": 3
+          },
+          "exclude_columns": {
+            "type": "array",
+            "description": "要排除的列名（如ID列）",
+            "example": ["user_id", "id"]
+          }
+        },
+        "example": {
+          "request": {
+            "file_path": "temp/data_features.csv",
+            "n_clusters": 3
+          },
+          "response": {
+            "status": "success",
+            "cluster_image_base64": "iVBORw0KGgoAAAANSUhEUgAA...",
+            "cluster_data_path": "temp/data_clustered_20260329_103600.csv",
+            "clustering_info": {
+              "n_clusters": 3,
+              "pca_applied": true,
+              "cluster_sizes": {
+                "0": 35,
+                "1": 33,
+                "2": 32
+              }
+            }
+          }
+        }
+      },
+      "ai_chat": {
+        "method": "POST",
+        "path": "/process/ai_chat",
+        "description": "与大模型进行对话",
+        "requires_api_key": true,
+        "parameters": {
+          "message": {
+            "type": "string",
+            "description": "用户输入的消息",
+            "example": "如何处理机器学习中的过拟合问题？"
+          },
+          "context": {
+            "type": "string",
+            "description": "可选的上下文信息",
+            "example": "我正在做一个分类任务"
+          }
+        },
+        "example": {
+          "request": {
+            "message": "如何优化模型性能？",
+            "context": "我在做电商推荐"
+          },
+          "response": {
+            "status": "success",
+            "message_id": "msg_20260329_103000",
+            "response": "可以通过以下几种方式优化..."
+          }
+        }
+      }
+    },
+    "notes": {
+      "file_paths": "所有文件路径都是相对于项目根目录的相对路径",
+      "api_key": "某些接口需要有效的 VOLC_API_KEY 环境变量",
+      "error_handling": "所有接口都有完整的错误处理，返回 500 状态码时包含详细错误信息",
+      "column_alignment": "模型预测时自动对齐特征列，解决列不匹配的问题"
+    }
+  }
+}
+

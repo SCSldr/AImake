@@ -5,6 +5,7 @@ let chatHistory = [];
 
 // DOM 元素获取
 const widgetRoot = document.querySelector('.widget-root'); // 关键：获取根容器
+const panel = document.getElementById("panel");
 const fab = document.getElementById("fab");
 const btnMinimize = document.getElementById("btnMinimize");
 const chatBox = document.getElementById("chatBox");
@@ -13,6 +14,13 @@ const btnSendChat = document.getElementById("btnSendChat");
 const btnNewChat = document.getElementById("btnNewChat");
 const timeLabel = document.getElementById("timeLabel");
 const tokenLabel = document.getElementById("tokenLabel");
+const chatHeader = document.querySelector(".chat-header");
+
+// 拖动状态（由 iframe 内部上报，父页面负责真正移动 iframe）
+const dragState = {
+    dragging: false,
+    pointerId: null
+};
 
 /**
  * 设置聊天窗口的打开状态。
@@ -20,7 +28,17 @@ const tokenLabel = document.getElementById("tokenLabel");
  */
 function setOpenState(isOpen) {
     // 关键：在 widget-root 上切换 class
-    widgetRoot.classList.toggle('is-open', isOpen);
+    if (widgetRoot) {
+        widgetRoot.classList.toggle('is-open', isOpen);
+    }
+
+    // 显式控制显示，避免仅靠 CSS class 导致面板无法打开
+    if (panel) {
+        panel.style.display = isOpen ? "flex" : "none";
+    }
+    if (fab) {
+        fab.style.display = isOpen ? "none" : "flex";
+    }
 
     // 通知父页面调整 iframe 大小
     window.parent.postMessage({
@@ -30,8 +48,76 @@ function setOpenState(isOpen) {
     }, "*");
 
     if (isOpen) {
-        setTimeout(() => chatInput.focus(), 60);
+        setTimeout(() => {
+            if (chatInput) {
+                chatInput.focus();
+            }
+        }, 60);
     }
+}
+
+function isDragIgnoredTarget(target) {
+    if (!target) return false;
+    return Boolean(target.closest("button, input, textarea, select, a, .chat-header-btn"));
+}
+
+function onDragStart(e) {
+    if (!panel || panel.style.display === "none") return;
+    if (e.button !== undefined && e.button !== 0) return;
+    if (isDragIgnoredTarget(e.target)) return;
+
+    dragState.dragging = true;
+    dragState.pointerId = e.pointerId || null;
+    if (chatHeader) chatHeader.classList.add("dragging");
+
+    window.parent.postMessage({
+        source: "aiChatWidget",
+        type: "drag",
+        phase: "start",
+        clientX: e.clientX,
+        clientY: e.clientY
+    }, "*");
+
+    window.addEventListener("pointermove", onDragMove);
+    window.addEventListener("pointerup", onDragEnd);
+    window.addEventListener("pointercancel", onDragEnd);
+
+    if (chatHeader && chatHeader.setPointerCapture && e.pointerId !== undefined) {
+        chatHeader.setPointerCapture(e.pointerId);
+    }
+    e.preventDefault();
+}
+
+function onDragMove(e) {
+    if (!dragState.dragging) return;
+    if (dragState.pointerId !== null && e.pointerId !== dragState.pointerId) return;
+
+    window.parent.postMessage({
+        source: "aiChatWidget",
+        type: "drag",
+        phase: "move",
+        clientX: e.clientX,
+        clientY: e.clientY
+    }, "*");
+}
+
+function onDragEnd(e) {
+    if (!dragState.dragging) return;
+    if (dragState.pointerId !== null && e.pointerId !== dragState.pointerId) return;
+
+    dragState.dragging = false;
+    dragState.pointerId = null;
+    if (chatHeader) chatHeader.classList.remove("dragging");
+
+    window.parent.postMessage({
+        source: "aiChatWidget",
+        type: "drag",
+        phase: "end"
+    }, "*");
+
+    window.removeEventListener("pointermove", onDragMove);
+    window.removeEventListener("pointerup", onDragEnd);
+    window.removeEventListener("pointercancel", onDragEnd);
 }
 
 // --- 聊天功能 (不变) ---
@@ -40,6 +126,7 @@ function cleanMarkdown(text) {
     return text.replace(/^#+\s*/gm, "").replace(/\*+/g, "").replace(/^[-*]{3,}\s*$/gm, "").trim();
 }
 function appendMessage(role, text) {
+    if (!chatBox) return null;
     const messageDiv = document.createElement("div");
     messageDiv.className = `chat-item ${role === "user" ? "chat-user" : "chat-ai"}`;
     const textSpan = document.createElement("span");
@@ -50,6 +137,7 @@ function appendMessage(role, text) {
     return textSpan;
 }
 function typewriterToElement(el, text, i = 0) {
+    if (!el || !chatBox) return;
     if (i === 0) el.textContent = "";
     if (i >= text.length) return;
     el.textContent += text[i];
@@ -57,6 +145,7 @@ function typewriterToElement(el, text, i = 0) {
     setTimeout(() => typewriterToElement(el, text, i + 1), 12);
 }
 async function sendMessage() {
+    if (!chatInput || !btnSendChat) return;
     const message = chatInput.value.trim();
     if (!message) return;
     appendMessage("user", message);
@@ -66,7 +155,7 @@ async function sendMessage() {
     const startTime = Date.now();
     try {
         const contextWithHistory = `${currentContext || ""}\n\n历史对话:\n${chatHistory.slice(-10).map(i => `${i.role}: ${i.content}`).join("\n")}`.trim();
-        const response = await fetch("/api/process/ai_chat", {
+        const response = await fetch("/api/py/ai-chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ message, context: contextWithHistory })
@@ -93,9 +182,10 @@ async function sendMessage() {
     }
 }
 async function resetChat() {
+    if (!chatBox || !tokenLabel || !timeLabel) return;
     if (!confirm("确定要开始新的对话吗？")) return;
     try {
-        await fetch("/api/process/ai_chat", {
+        await fetch("/api/py/ai-chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ clear_history: true })
@@ -117,20 +207,25 @@ window.addEventListener("message", (event) => {
         currentContext = data.context || "";
     }
 });
-fab.addEventListener("click", () => setOpenState(true));
-btnMinimize.addEventListener("click", () => setOpenState(false));
-btnNewChat.addEventListener("click", resetChat);
-btnSendChat.addEventListener("click", sendMessage);
-chatInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        sendMessage();
-    } else if (e.key === "Escape") {
-        setOpenState(false);
-    }
-});
+if (fab) fab.addEventListener("click", () => setOpenState(true));
+if (btnMinimize) btnMinimize.addEventListener("click", () => setOpenState(false));
+if (btnNewChat) btnNewChat.addEventListener("click", resetChat);
+if (btnSendChat) btnSendChat.addEventListener("click", sendMessage);
+if (chatHeader) chatHeader.addEventListener("pointerdown", onDragStart);
+if (chatInput) {
+    chatInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        } else if (e.key === "Escape") {
+            setOpenState(false);
+        }
+    });
+}
 
 // --- 初始化 ---
 setOpenState(false);
 const initialMsg = appendMessage("ai", "");
-typewriterToElement(initialMsg, "你好，我是你的智造小E，有问题直接问我。");
+if (initialMsg) {
+    typewriterToElement(initialMsg, "你好，我是你的智造小E，有问题直接问我。");
+}

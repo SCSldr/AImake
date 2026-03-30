@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>AImake - 无监督学习</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="assets/css/app.css?v=1.1" rel="stylesheet">
+    <link href="assets/css/app.css?v=1.2" rel="stylesheet">
 </head>
 <body>
 <div class="container-fluid py-3">
@@ -37,6 +37,14 @@
                     <h5 class="panel-title">1. 数据准备</h5>
                     <p class="small-hint">上传数据文件或使用 AI 生成样例数据。</p>
                     <div class="edu-note mb-3">知识点：无监督学习没有标签，输入特征的统计分布决定了聚类结构。</div>
+                    <div class="edu-guide">
+                        <div class="edu-guide-title">教程：无监督学习先看什么</div>
+                        <ul class="edu-guide-list">
+                            <li>无监督学习没有标签，模型只能根据特征相似度自动找结构。</li>
+                            <li>因此字段质量和尺度分布非常关键，决定了后续分群是否有意义。</li>
+                            <li>建议准备业务关键字段，如消费、频次、活跃度等可区分人群的指标。</li>
+                        </ul>
+                    </div>
                     <div class="row g-3">
                         <div class="col-12">
                             <label class="form-label">上传数据文件</label>
@@ -51,7 +59,11 @@
                         </div>
                         <div class="col-12 col-md-4">
                             <label class="form-label">生成行数</label>
-                            <input type="number" class="form-control" id="aiRowCount" value="50" min="10" max="10000">
+                            <input type="number" class="form-control" id="aiRowCount" value="50" min="20" max="100">
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <label class="form-label" for="aiCustomHeaders">自定义表头（可选，逗号分隔，最多6个）</label>
+                            <input type="text" class="form-control" id="aiCustomHeaders" placeholder="例如：customer_id,spend,frequency,segment">
                         </div>
                         <div class="col-12 d-flex">
                             <button class="btn btn-outline-primary" id="btnGenerateData">AI 生成数据</button>
@@ -65,6 +77,14 @@
                     <h5 class="panel-title">2. 数据清洗</h5>
                     <p class="small-hint">移除缺失值、标准化结构，为聚类做好准备。</p>
                     <div class="edu-note mb-3">知识点：聚类算法高度依赖距离度量，异常值会显著拉偏聚类中心。</div>
+                    <div class="edu-guide">
+                        <div class="edu-guide-title">教程：清洗的教学重点</div>
+                        <ul class="edu-guide-list">
+                            <li>缺失值和异常值会扭曲距离，导致同类样本被误分到不同簇。</li>
+                            <li>当前一键清洗会优先清理不完整记录，再过滤数值列中的异常样本。</li>
+                            <li>字符串列一般不做异常值统计，避免把类别信息误当数值噪声处理。</li>
+                        </ul>
+                    </div>
                     <div class="d-flex flex-wrap gap-2 mb-3">
                         <button class="btn btn-warning" id="btnCleanData">一键清洗</button>
                     </div>
@@ -75,6 +95,14 @@
                 <div class="card-body">
                     <h5 class="panel-title">3. 聚类分析</h5>
                     <div class="edu-note mb-3">知识点：K 值越大分群越细，但过大可能导致噪声簇，建议结合业务经验迭代。</div>
+                    <div class="edu-guide">
+                        <div class="edu-guide-title">教程：如何选择 K 值</div>
+                        <ul class="edu-guide-list">
+                            <li>K 值表示你希望把数据分成几群，过小会混群，过大则会过度切分。</li>
+                            <li>教学中可先尝试 3 到 5，对比每个簇样本量和业务解释是否合理。</li>
+                            <li>随机种子固定后可稳定复现实验，便于课堂多次对照演示。</li>
+                        </ul>
+                    </div>
                     <div class="row g-3 align-items-end">
                         <div class="col-12 col-md-3">
                             <label class="form-label">聚类数量</label>
@@ -95,6 +123,14 @@
                 <div class="card-body">
                     <h5 class="panel-title">4. 降维可视化</h5>
                     <div class="edu-note mb-3">知识点：PCA强调线性可解释性，t-SNE更适合非线性结构可视化。</div>
+                    <div class="edu-guide">
+                        <div class="edu-guide-title">教程：为什么要降维</div>
+                        <ul class="edu-guide-list">
+                            <li>高维数据难以直观看到分群结构，降维后可在二维平面观察簇分布。</li>
+                            <li>PCA适合讲解主成分和方差贡献，t-SNE适合展示复杂非线性邻域关系。</li>
+                            <li>可视化的目的不是替代指标，而是帮助你解释模型输出是否符合直觉。</li>
+                        </ul>
+                    </div>
                     <div class="row g-3 align-items-end">
                         <div class="col-12 col-md-4">
                             <label class="form-label">降维方式</label>
@@ -114,6 +150,14 @@
                 <div class="card-body">
                     <h5 class="panel-title">5. 结果展示</h5>
                     <div class="edu-note mb-3">知识点：解读聚类结果时，应结合各簇样本数和中心特征做业务命名。</div>
+                    <div class="edu-guide">
+                        <div class="edu-guide-title">教程：如何解读聚类结果</div>
+                        <ul class="edu-guide-list">
+                            <li>先看每个簇的样本量，判断是否有极小簇（可能是异常群体或噪声）。</li>
+                            <li>再看簇中心特征差异，给每个簇起业务可理解的名字。</li>
+                            <li>最后用可视化图验证簇间分离度，作为后续运营策略的依据。</li>
+                        </ul>
+                    </div>
                     <div class="row g-3">
                         <div class="col-12 col-lg-6">
                             <label class="form-label">聚类分布图</label>

@@ -1,12 +1,10 @@
 :root {
     --brand: #4f7cff;
-    --brand-soft: #eef3ff;
-    --bg: #f8faff;
     --panel: #ffffff;
     --text: #1f2a44;
     --sub-text: #6d7b99;
     --border: #dbe4ff;
-    --shadow: 0 10px 30px rgba(44, 76, 154, 0.18);
+    --bg: #f8faff;
 }
 
 html, body {
@@ -18,18 +16,24 @@ html, body {
     overflow: hidden;
     font-family: "Microsoft YaHei", "SimHei", sans-serif;
     font-size: 14px;
-    user-select: none;
 }
 
-/* 关键修复：让根容器占满所有空间并作为定位上下文 */
 .widget-root {
     width: 100%;
     height: 100%;
     position: relative;
 }
 
-/* --- 可见性与定位 --- */
+/* 兼容旧脚本：仅切 class 时也能正确显示/隐藏 */
+.widget-root.is-open .chat-panel {
+    display: flex !important;
+}
 
+.widget-root.is-open .fab-ball {
+    display: none !important;
+}
+
+/* --- 悬浮球 --- */
 .fab-ball {
     width: 58px;
     height: 58px;
@@ -41,14 +45,12 @@ html, body {
     justify-content: center;
     cursor: pointer;
     box-shadow: 0 10px 24px rgba(74, 106, 232, 0.35);
-    transition: transform 0.3s ease, opacity 0.3s ease;
-    /* 绝对定位于 widget-root 的右下角 */
     position: absolute;
     right: 0;
     bottom: 0;
-    z-index: 10;
 }
 
+/* --- 聊天面板 --- */
 .chat-panel {
     width: 100%;
     height: 100%;
@@ -56,67 +58,49 @@ html, body {
     border: 1px solid var(--border);
     background: var(--panel);
     color: var(--text);
+    /* 关键修复：使用 flex 布局来分配空间 */
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    box-shadow: var(--shadow);
-    transition: transform 0.3s ease, opacity 0.3s ease;
-    /* 绝对定位于 widget-root 的左上角 */
-    position: absolute;
-    top: 0;
-    left: 0;
-    z-index: 5;
+    box-shadow: 0 10px 30px rgba(44, 76, 154, 0.18);
 }
 
-/* 默认状态：显示悬浮球，隐藏面板 */
-.fab-ball {
-    opacity: 1;
-    transform: scale(1);
-    pointer-events: auto;
-}
-.chat-panel {
-    opacity: 0;
-    transform: scale(0.9);
-    pointer-events: none;
-}
-
-/* is-open 状态：隐藏悬浮球，显示面板 */
-.widget-root.is-open .fab-ball {
-    opacity: 0;
-    transform: scale(0.8);
-    pointer-events: none;
-}
-.widget-root.is-open .chat-panel {
-    opacity: 1;
-    transform: scale(1);
-    pointer-events: auto;
-}
-
-
-/* --- 内部样式 (不变) --- */
-.fab-ball:hover {
-    transform: translateY(-2px) scale(1.04);
-    box-shadow: 0 14px 30px rgba(74, 106, 232, 0.45);
-}
 .chat-header {
     padding: 10px 12px;
     border-bottom: 1px solid var(--border);
     display: flex;
     justify-content: space-between;
     align-items: center;
+    /* 固定高度，不参与 flex 伸缩 */
     flex-shrink: 0;
-    background: linear-gradient(180deg, #f8fbff 0%, #f2f7ff 100%);
+    cursor: grab;
+    user-select: none;
 }
+
+.chat-header.dragging {
+    cursor: grabbing;
+}
+
+/* 让聊天框占据所有剩余空间 */
+.chat-box {
+    flex-grow: 1;
+    padding: 12px;
+    overflow-y: auto;
+    background: var(--bg);
+}
+
+.chat-input-row, .chat-status {
+    /* 固定高度，不参与 flex 伸缩 */
+    flex-shrink: 0;
+}
+
+/* --- 内部组件样式 (基本不变) --- */
 .chat-title { font-size: 1rem; font-weight: 700; color: var(--brand); }
 .chat-header-btn { background: #fff; border: 1px solid var(--border); width: 28px; height: 28px; border-radius: 8px; padding: 0; cursor: pointer; color: var(--sub-text); }
-.chat-header-btn:hover { color: var(--brand); border-color: #b8c9ff; background: var(--brand-soft); }
-.chat-box { flex-grow: 1; padding: 12px; overflow-y: auto; overflow-x: hidden; line-height: 1.5; background: var(--bg); }
 .chat-item { margin-bottom: 10px; max-width: 88%; padding: 8px 12px; border-radius: 12px; word-break: break-word; white-space: pre-wrap; }
-.chat-ai { background: #ffffff; color: var(--text); border: 1px solid #e6edff; border-bottom-left-radius: 4px; box-shadow: 0 4px 12px rgba(58, 84, 156, 0.08); }
+.chat-ai { background: #ffffff; color: var(--text); border: 1px solid #e6edff; border-bottom-left-radius: 4px; }
 .chat-user { background: linear-gradient(145deg, #5f83ff 0%, #4f6fff 100%); color: #fff; border-bottom-right-radius: 4px; margin-left: auto; }
-.chat-input-row { padding: 10px; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: center; flex-shrink: 0; background: #fff; }
+.chat-input-row { padding: 10px; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: center; background: #fff; }
 .chat-input { flex-grow: 1; min-width: 0; border-radius: 20px; border: 1px solid var(--border); background: #f7faff; color: var(--text); padding: 8px 14px; font-size: 14px; }
-.chat-input:focus { outline: none; border-color: #9ab2ff; box-shadow: 0 0 0 3px rgba(95, 124, 255, 0.15); }
 .chat-send { width: 36px; height: 36px; border: none; border-radius: 50%; color: #fff; background: var(--brand); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.chat-send:hover { filter: brightness(1.05); }
-.chat-status { padding: 4px 12px 8px; display: flex; justify-content: space-between; color: var(--sub-text); font-size: 11px; background: #fff; border-top: 1px solid #edf2ff; flex-shrink: 0; }
+.chat-status { padding: 4px 12px 8px; display: flex; justify-content: space-between; color: var(--sub-text); font-size: 11px; background: #fff; border-top: 1px solid #edf2ff; }

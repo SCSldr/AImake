@@ -6,10 +6,12 @@ import com.alibaba.excel.event.AnalysisEventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.InputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -48,30 +50,69 @@ public class AutoMlService {
     /**
      * 预览 Excel 文件。
      * <p>
-     * 将上传的 Excel 文件保存到 temp/ 目录，然后使用 EasyExcel 读取文件的前 20 行数据。
+     * 将上传的 Excel 文件保存到 temp/ 目录，然后使用 EasyExcel 读取全表数据。
      *
      * @param file 用户上传的 MultipartFile 文件
-     * @return 返回一个包含 Excel 表头和前 20 行数据的列表，每行数据是一个 Map
+     * @return 返回一个包含 Excel 表头和全量行数据的列表，每行数据是一个 Map
      * @throws IOException 如果文件保存或读取时发生 I/O 错误
      */
     public Map<String, Object> previewExcel(MultipartFile file) throws IOException {
-        // 1. 将文件保存到 temp 目录
-        // 使用原始文件名，并确保路径安全
-        String originalFilename = file.getOriginalFilename();
-        if (originalFilename == null || originalFilename.contains("..")) {
-            throw new IOException("不合法的原始文件名。");
-        }
-        Path targetPath = tempDirPath.resolve(originalFilename);
-        file.transferTo(targetPath.toFile());
+        System.out.println("[Service] === 开始处理 previewExcel ===");
 
-        // 2. 使用 EasyExcel 读取前 20 行数据
+        if (file == null || file.isEmpty()) {
+            throw new IOException("上传失败：文件为空，请重新选择 Excel 文件。");
+        }
+        
+        // 1. 将文件保存到 temp 目录
+        String originalFilename = file.getOriginalFilename();
+        System.out.println("[Service] 原始文件名: " + originalFilename);
+        
+        if (originalFilename == null || originalFilename.isBlank() || originalFilename.contains("..")) {
+            throw new IOException("上传失败：文件名不合法。");
+        }
+
+        String lowerName = originalFilename.toLowerCase();
+        if (!(lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls"))) {
+            throw new IOException("上传失败：仅支持 .xlsx 或 .xls 文件。");
+        }
+
+        // 避免同名文件覆盖/占用导致 transferTo 失败，统一生成唯一文件名
+        String safeFilename = System.currentTimeMillis() + "_" + originalFilename.replaceAll("[^a-zA-Z0-9._-]", "_");
+        
+        Path targetPath = tempDirPath.resolve(safeFilename);
+        System.out.println("[Service] 目标保存路径: " + targetPath.toAbsolutePath());
+        
+        try (InputStream inputStream = file.getInputStream()) {
+            Files.copy(inputStream, targetPath, StandardCopyOption.REPLACE_EXISTING);
+            System.out.println("[Service] ✓ 文件已保存成功");
+            System.out.println("[Service]   文件大小: " + Files.size(targetPath) + " bytes");
+        } catch (Exception e) {
+            System.out.println("[Service] ✗ 文件保存失败: " + e.getMessage());
+            throw new IOException("文件保存失败，请检查 temp 目录权限或文件是否被占用。", e);
+        }
+
+        // 2. 使用 EasyExcel 读取全表数据
+        System.out.println("[Service] 开始使用 EasyExcel 读取文件...");
         ExcelPreviewListener listener = new ExcelPreviewListener();
-        EasyExcel.read(targetPath.toFile(), listener)
-                .headRowNumber(1)
-                .sheet()
-                .doRead();
+        try {
+            EasyExcel.read(targetPath.toFile(), listener)
+                    .headRowNumber(1)
+                    .sheet()
+                    .doRead();
+            
+            System.out.println("[Service] ✓ EasyExcel 读取成功");
+            System.out.println("[Service]   表头数量: " + listener.getHeaders().size());
+            System.out.println("[Service]   表头名称: " + listener.getHeaders());
+            System.out.println("[Service]   总行数: " + listener.getTotalRowCount());
+            System.out.println("[Service]   预览行数: " + listener.getData().size());
+        } catch (Exception e) {
+            System.out.println("[Service] ✗ EasyExcel 读取失败: " + e.getMessage());
+            e.printStackTrace();
+            throw new IOException("Excel 文件读取失败，请确认文件未损坏且首行为表头。", e);
+        }
 
         // 3. 返回预览和文件路径，供后续流程继续使用
+        System.out.println("[Service] === 准备返回响应数据 ===");
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("status", "success");
         result.put("file_path", targetPath.toAbsolutePath().toString());
@@ -79,6 +120,7 @@ public class AutoMlService {
         result.put("total_rows", listener.getTotalRowCount());
         // 兼容旧前端字段（可逐步移除）
         result.put("preview", listener.getData());
+        System.out.println("[Service] === previewExcel 处理完成 ===");
         return result;
     }
 
@@ -87,14 +129,11 @@ public class AutoMlService {
      * <p>
      * 核心功能：
      * 1. 读取表头。
-     * 2. 逐行读取数据，并限制最多读取 20 行。
+     * 2. 逐行读取数据，保存为全表预览。
      * 3. **【核心 Bug 修复】** 将所有单元格数据（无论原始类型是 Integer, Double 还是 String）统一转换为字符串，
      *    存入 `Map<String, String>`，以防止后续 JSON 转换时因类型不匹配而抛出异常。
      */
     private static class ExcelPreviewListener extends AnalysisEventListener<Map<Integer, Object>> {
-
-        // 预览行数限制
-        private static final int PREVIEW_ROW_LIMIT = 20;
 
         // 存储表头，key 是列索引，value 是表头名
         private final Map<Integer, String> headMap = new LinkedHashMap<>();
@@ -125,10 +164,6 @@ public class AutoMlService {
         public void invoke(Map<Integer, Object> data, AnalysisContext context) {
             totalRowCount++;
 
-            // 如果已达到预览行数限制，则停止处理
-            if (dataList.size() >= PREVIEW_ROW_LIMIT) {
-                return;
-            }
 
             Map<String, String> rowData = new LinkedHashMap<>();
             headMap.forEach((index, headName) -> {
