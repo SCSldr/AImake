@@ -153,7 +153,7 @@ label.form-label,
 
 .chat-widget-frame {
     position: fixed;
-    right: 24px;
+    left: 24px;
     bottom: 20px;
     border: none;
     border-radius: 28px; /* Corresponds to the fab-ball's half-height */
@@ -192,7 +192,7 @@ label.form-label,
 
 @media (max-width: 992px) {
     .chat-widget-frame {
-        right: 12px;
+        left: 12px;
         bottom: 12px;
     }
 }

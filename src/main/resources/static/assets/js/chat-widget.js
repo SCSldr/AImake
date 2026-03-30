@@ -16,12 +16,6 @@ const timeLabel = document.getElementById("timeLabel");
 const tokenLabel = document.getElementById("tokenLabel");
 const chatHeader = document.querySelector(".chat-header");
 
-// 拖动状态（由 iframe 内部上报，父页面负责真正移动 iframe）
-const dragState = {
-    dragging: false,
-    pointerId: null
-};
-
 /**
  * 设置聊天窗口的打开状态。
  * @param {boolean} isOpen - true 为打开，false 为关闭。
@@ -66,58 +60,13 @@ function onDragStart(e) {
     if (e.button !== undefined && e.button !== 0) return;
     if (isDragIgnoredTarget(e.target)) return;
 
-    dragState.dragging = true;
-    dragState.pointerId = e.pointerId || null;
-    if (chatHeader) chatHeader.classList.add("dragging");
-
+    // 只发起拖拽信号，具体 move/up 逻辑在父页面处理
     window.parent.postMessage({
-        source: "aiChatWidget",
-        type: "drag",
-        phase: "start",
-        clientX: e.clientX,
-        clientY: e.clientY
+        type: "dragStart",
+        screenX: e.screenX,
+        screenY: e.screenY
     }, "*");
-
-    window.addEventListener("pointermove", onDragMove);
-    window.addEventListener("pointerup", onDragEnd);
-    window.addEventListener("pointercancel", onDragEnd);
-
-    if (chatHeader && chatHeader.setPointerCapture && e.pointerId !== undefined) {
-        chatHeader.setPointerCapture(e.pointerId);
-    }
     e.preventDefault();
-}
-
-function onDragMove(e) {
-    if (!dragState.dragging) return;
-    if (dragState.pointerId !== null && e.pointerId !== dragState.pointerId) return;
-
-    window.parent.postMessage({
-        source: "aiChatWidget",
-        type: "drag",
-        phase: "move",
-        clientX: e.clientX,
-        clientY: e.clientY
-    }, "*");
-}
-
-function onDragEnd(e) {
-    if (!dragState.dragging) return;
-    if (dragState.pointerId !== null && e.pointerId !== dragState.pointerId) return;
-
-    dragState.dragging = false;
-    dragState.pointerId = null;
-    if (chatHeader) chatHeader.classList.remove("dragging");
-
-    window.parent.postMessage({
-        source: "aiChatWidget",
-        type: "drag",
-        phase: "end"
-    }, "*");
-
-    window.removeEventListener("pointermove", onDragMove);
-    window.removeEventListener("pointerup", onDragEnd);
-    window.removeEventListener("pointercancel", onDragEnd);
 }
 
 // --- 聊天功能 (不变) ---
@@ -211,7 +160,7 @@ if (fab) fab.addEventListener("click", () => setOpenState(true));
 if (btnMinimize) btnMinimize.addEventListener("click", () => setOpenState(false));
 if (btnNewChat) btnNewChat.addEventListener("click", resetChat);
 if (btnSendChat) btnSendChat.addEventListener("click", sendMessage);
-if (chatHeader) chatHeader.addEventListener("pointerdown", onDragStart);
+if (chatHeader) chatHeader.addEventListener("mousedown", onDragStart);
 if (chatInput) {
     chatInput.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && !e.shiftKey) {

@@ -81,6 +81,11 @@ class PredictRequest(BaseModel):
     manual_features: Optional[Dict[str, Any]] = None
 
 # 换成这个
+class AiChatRequest(BaseModel):
+    message: str
+    context: Optional[str] = None
+    clear_history: Optional[bool] = False
+
 
 # 加载环境变量
 load_dotenv()
@@ -231,64 +236,59 @@ def to_python_value(value: Any) -> Any:
         return {k: to_python_value(v) for k, v in value.items()}
     return value
 
+#========================= 大模型对话 =====================
+chat_history = [
+    {"role": "system", "content": "你是由用户自主研发的AI助手。简洁回答，不要使用md格式、代码块。"}
+]
 
-# ===================== 接口 1: 测试大模型连通性 =====================
-@app.post('/process/check_llm_connection')
-async def check_llm_connection():
-    """
-    测试火山引擎大模型的连通性和 API Key 是否有效
-    """
+
+# 3. 重新立起 AI 对话接口 (解决刚才的 404)
+@app.post('/process/ai_chat')  # 👈 必须叫这个名，Java 才能认出它
+async def ai_chat(req: AiChatRequest):
+    global chat_history
     try:
-        if not VOLC_API_KEY:
-            return JSONResponse(
-                status_code=400,
-                content={'error': '未设置 api_key 环境变量'}
-            )
-        
-        # 创建大模型客户端，使用自定义的 API Key 和 Base URL
-        import os
-        os.environ['VOLC_ACCESSKEY'] = VOLC_API_KEY
-        
-        client = ark.ArksRuntimeClient()
-        
-        # 发送简单的测试消息
-        messages = [
-            ArksMessage(role='user', content='你好，请回复"连接成功"即可')
-        ]
-        
+        # 如果前端发了清空指令
+        if req.clear_history:
+            chat_history = [{"role": "system", "content": "你是由用户自主研发的AI助手。"}]
+            return {"status": "success", "response": "已清空对话历史"}
+
+        # 获取用户消息
+        user_msg = req.message
+        if req.context:
+            # 如果有上下文（比如当前正在看的 Excel 路径），带给 AI
+            user_msg = f"当前上下文：{req.context}\n\n用户问题：{user_msg}"
+
+        # 记录用户说的话
+        chat_history.append({"role": "user", "content": user_msg})
+
+        # 调用火山引擎 Ark
+        from volcenginesdkarkruntime import Ark
+        client = Ark(api_key=VOLC_API_KEY)
+
         response = client.chat.completions.create(
             model=VOLC_MODEL,
-            messages=messages,
-            max_tokens=50
-        )
-        
-        # 检查响应
-        if response and hasattr(response, 'choices') and len(response.choices) > 0:
-            content = response.choices[0].message.content
-            logger.info('大模型连通性测试成功')
-            return {
-                'status': 'success',
-                'message': '大模型连接成功',
-                'model': VOLC_MODEL,
-                'base_url': VOLC_BASE_URL,
-                'response': content
-            }
-        else:
-            return JSONResponse(
-                status_code=500,
-                content={'error': '大模型返回异常响应'}
-            )
-    
-    except Exception as e:
-        logger.error(f'测试大模型连通性失败: {str(e)}\n{traceback.format_exc()}')
-        return JSONResponse(
-            status_code=500,
-            content={
-                'error': '大模型连通性测试失败',
-                'details': str(e)
-            }
+            messages=chat_history
         )
 
+        # 提取并清洗回答
+        ai_response = response.choices[0].message.content.strip()
+
+        # 记录 AI 说的话，实现连续对话
+        chat_history.append({"role": "assistant", "content": ai_response})
+
+        # 保持历史长度，防止爆 Token
+        if len(chat_history) > 10:
+            chat_history = [chat_history[0]] + chat_history[-9:]
+
+        return {
+            "status": "success",
+            "response": ai_response
+        }
+
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return {"status": "error", "response": f"AI 暂时开小差了: {str(e)}"}
 
 # ===================== 接口 2: 调用大模型生成 CSV 数据 =====================
 @app.post('/process/generate')

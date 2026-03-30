@@ -46,7 +46,8 @@ html, body {
     cursor: pointer;
     box-shadow: 0 10px 24px rgba(74, 106, 232, 0.35);
     position: absolute;
-    right: 0;
+    left: 0;
+    right: auto;
     bottom: 0;
 }
 

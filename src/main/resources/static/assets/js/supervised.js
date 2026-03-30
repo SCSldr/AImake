@@ -23,11 +23,29 @@ const MAX_CUSTOM_HEADERS = 6;
 const aiChatWidgetFrame = document.getElementById("aiChatWidgetFrame");
 const chatDragState = {
     dragging: false,
-    startX: 0,
-    startY: 0,
+    startScreenX: 0,
+    startScreenY: 0,
     startLeft: 0,
     startTop: 0
 };
+let dragMask = null;
+
+function ensureDragMask() {
+    if (dragMask) return dragMask;
+    dragMask = document.createElement("div");
+    dragMask.id = "chatDragMask";
+    dragMask.style.position = "fixed";
+    dragMask.style.left = "0";
+    dragMask.style.top = "0";
+    dragMask.style.width = "100vw";
+    dragMask.style.height = "100vh";
+    dragMask.style.zIndex = "9999";
+    dragMask.style.display = "none";
+    dragMask.style.background = "transparent";
+    dragMask.style.cursor = "grabbing";
+    document.body.appendChild(dragMask);
+    return dragMask;
+}
 
 function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
@@ -51,6 +69,24 @@ function moveFrameTo(left, top) {
     aiChatWidgetFrame.style.top = `${clamp(top, 0, maxTop)}px`;
 }
 
+function onDocumentDragMove(e) {
+    if (!chatDragState.dragging || !aiChatWidgetFrame) return;
+    const dx = e.screenX - chatDragState.startScreenX;
+    const dy = e.screenY - chatDragState.startScreenY;
+    moveFrameTo(chatDragState.startLeft + dx, chatDragState.startTop + dy);
+    aiChatWidgetFrame.style.right = "auto";
+    aiChatWidgetFrame.style.bottom = "auto";
+}
+
+function onDocumentDragEnd() {
+    if (!chatDragState.dragging) return;
+    chatDragState.dragging = false;
+    const mask = ensureDragMask();
+    mask.style.display = "none";
+    document.removeEventListener("mousemove", onDocumentDragMove);
+    document.removeEventListener("mouseup", onDocumentDragEnd);
+}
+
 /**
  * 向 AI 聊天窗口发送上下文信息。
  */
@@ -68,27 +104,26 @@ function sendContextToChatWidget() {
  */
 window.addEventListener("message", (event) => {
     const data = event.data || {};
-    if (data.source !== "aiChatWidget") return;
     if (!aiChatWidgetFrame) return;
 
-    if (data.type === "drag") {
-        if (data.phase === "start") {
-            ensureFrameFreePosition();
-            chatDragState.dragging = true;
-            chatDragState.startX = Number(data.clientX) || 0;
-            chatDragState.startY = Number(data.clientY) || 0;
-            chatDragState.startLeft = parseFloat(aiChatWidgetFrame.style.left) || 0;
-            chatDragState.startTop = parseFloat(aiChatWidgetFrame.style.top) || 0;
-        } else if (data.phase === "move" && chatDragState.dragging) {
-            const dx = (Number(data.clientX) || 0) - chatDragState.startX;
-            const dy = (Number(data.clientY) || 0) - chatDragState.startY;
-            moveFrameTo(chatDragState.startLeft + dx, chatDragState.startTop + dy);
-        } else if (data.phase === "end") {
-            chatDragState.dragging = false;
-        }
+    if (data.type === "dragStart") {
+        ensureFrameFreePosition();
+        const rect = aiChatWidgetFrame.getBoundingClientRect();
+        chatDragState.dragging = true;
+        chatDragState.startScreenX = Number(data.screenX) || 0;
+        chatDragState.startScreenY = Number(data.screenY) || 0;
+        chatDragState.startLeft = rect.left;
+        chatDragState.startTop = rect.top;
+
+        const mask = ensureDragMask();
+        mask.style.display = "block";
+
+        document.addEventListener("mousemove", onDocumentDragMove);
+        document.addEventListener("mouseup", onDocumentDragEnd);
         return;
     }
 
+    if (data.source !== "aiChatWidget") return;
     if (data.type !== "toggle") return;
 
     if (data.isPanelVisible) {
