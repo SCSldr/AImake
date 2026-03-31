@@ -43,6 +43,18 @@
             <span id="tokenLabel">Tokens: 0</span>
         </div>
     </div>
+
+    <!-- 新对话确认弹窗（内置，不走浏览器 confirm） -->
+    <div id="confirmOverlay" class="confirm-overlay" style="display:none;" aria-hidden="true">
+        <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+            <h4 id="confirmTitle" class="confirm-title">开始新对话？</h4>
+            <p class="confirm-text">当前对话记录会被清空。</p>
+            <div class="confirm-actions">
+                <button id="confirmCancel" class="confirm-btn secondary" type="button">取消</button>
+                <button id="confirmOk" class="confirm-btn primary" type="button">确认新建</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script src="assets/js/chat-widget.js?v=1.9"></script>

@@ -12,6 +12,9 @@ const state = {
 const MIN_AI_ROWS = 20;
 const MAX_AI_ROWS = 100;
 const MAX_CUSTOM_HEADERS = 6;
+const CHAT_COLLAPSED_SIZE = 58;
+const CHAT_OPEN_WIDTH = 380;
+const CHAT_OPEN_HEIGHT = 560;
 
 // --- 聊天窗口通信 ---
 const aiChatWidgetFrame = document.getElementById("aiChatWidgetFrame");
@@ -21,6 +24,10 @@ const chatDragState = {
     startScreenY: 0,
     startLeft: 0,
     startTop: 0
+};
+const chatToggleState = {
+    collapsedLeft: null,
+    collapsedTop: null
 };
 let dragMask = null;
 
@@ -61,6 +68,49 @@ function moveFrameTo(left, top) {
     const maxTop = Math.max(0, window.innerHeight - aiChatWidgetFrame.offsetHeight);
     aiChatWidgetFrame.style.left = `${clamp(left, 0, maxLeft)}px`;
     aiChatWidgetFrame.style.top = `${clamp(top, 0, maxTop)}px`;
+}
+
+function setFrameSize(width, height) {
+    if (!aiChatWidgetFrame) return;
+    aiChatWidgetFrame.style.width = `${width}px`;
+    aiChatWidgetFrame.style.height = `${height}px`;
+}
+
+function expandFrameAutoDirection() {
+    if (!aiChatWidgetFrame) return;
+    ensureFrameFreePosition();
+    const rect = aiChatWidgetFrame.getBoundingClientRect();
+    chatToggleState.collapsedLeft = rect.left;
+    chatToggleState.collapsedTop = rect.top;
+
+    const spaceLeft = rect.right;
+    const spaceRight = window.innerWidth - rect.left;
+    const spaceTop = rect.bottom;
+    const spaceBottom = window.innerHeight - rect.top;
+
+    const expandToLeft = spaceLeft >= CHAT_OPEN_WIDTH || spaceLeft >= spaceRight;
+    const expandUp = spaceTop >= CHAT_OPEN_HEIGHT || spaceTop >= spaceBottom;
+
+    const targetLeft = expandToLeft ? rect.right - CHAT_OPEN_WIDTH : rect.left;
+    const targetTop = expandUp ? rect.bottom - CHAT_OPEN_HEIGHT : rect.top;
+
+    setFrameSize(CHAT_OPEN_WIDTH, CHAT_OPEN_HEIGHT);
+    aiChatWidgetFrame.style.right = "auto";
+    aiChatWidgetFrame.style.bottom = "auto";
+    moveFrameTo(targetLeft, targetTop);
+}
+
+function collapseFrameToAnchor() {
+    if (!aiChatWidgetFrame) return;
+    setFrameSize(CHAT_COLLAPSED_SIZE, CHAT_COLLAPSED_SIZE);
+    aiChatWidgetFrame.style.right = "auto";
+    aiChatWidgetFrame.style.bottom = "auto";
+
+    const fallbackLeft = parseFloat(aiChatWidgetFrame.style.left) || 0;
+    const fallbackTop = parseFloat(aiChatWidgetFrame.style.top) || 0;
+    const left = chatToggleState.collapsedLeft ?? fallbackLeft;
+    const top = chatToggleState.collapsedTop ?? fallbackTop;
+    moveFrameTo(left, top);
 }
 
 function onDocumentDragMove(e) {
@@ -121,13 +171,11 @@ window.addEventListener("message", (event) => {
     if (data.type !== "toggle") return;
 
     if (data.isPanelVisible) {
-        // 展开
-        aiChatWidgetFrame.style.width = "380px";
-        aiChatWidgetFrame.style.height = "560px";
+        // 自动判断展开方向：上方不够则向下，左侧不够则向右
+        expandFrameAutoDirection();
     } else {
-        // 收起
-        aiChatWidgetFrame.style.width = "58px"; // 修正尺寸
-        aiChatWidgetFrame.style.height = "58px"; // 修正尺寸
+        // 收起时回到展开前悬浮球位置
+        collapseFrameToAnchor();
     }
 
     if (aiChatWidgetFrame.dataset.freePosition === "1") {
@@ -142,7 +190,9 @@ window.addEventListener("message", (event) => {
 
 function setFilePath(path) {
     state.currentFilePath = path || "";
-    document.getElementById("currentFilePathText").textContent = `当前文件：${state.currentFilePath || "未设置"}`;
+    if (currentFilePathText) {
+        currentFilePathText.textContent = `当前文件：${state.currentFilePath || "未设置"}`;
+    }
     sendContextToChatWidget();
 }
 
@@ -152,8 +202,93 @@ function setFilePath(path) {
 // ==============================================================================
 // 辅助函数 (未修改)
 // ==============================================================================
+const stepIds = ["step1", "step2", "step3", "step4", "step5"];
+let currentStepIndex = 0;
+const stepCompletion = {
+    step1: false,
+    step2: false,
+    step3: false,
+    step4: false
+};
+
+const stepNav = document.getElementById("stepNav");
 const previewTable = document.getElementById("previewTable");
 const previewPager = document.getElementById("previewPager");
+const currentFilePathText = document.getElementById("currentFilePathText");
+
+function isCurrentStepCompleted(index) {
+    switch (index) {
+        case 0: return stepCompletion.step1;
+        case 1: return stepCompletion.step2;
+        case 2: return stepCompletion.step3;
+        case 3: return stepCompletion.step4;
+        default: return true;
+    }
+}
+
+function updateStepControls() {
+    const prevBtn = document.getElementById("btnPrevStep");
+    const nextBtn = document.getElementById("btnNextStep");
+    if (!prevBtn || !nextBtn) return;
+    prevBtn.disabled = currentStepIndex === 0;
+    nextBtn.disabled = currentStepIndex === stepIds.length - 1 || !isCurrentStepCompleted(currentStepIndex);
+}
+
+function invalidateFrom(stepIndex) {
+    if (stepIndex <= 2) {
+        stepCompletion.step3 = false;
+        const stats = document.getElementById("clusterStats");
+        if (stats) stats.textContent = "暂无数据";
+        const clusterImg = document.getElementById("clusterImage");
+        if (clusterImg) clusterImg.removeAttribute("src");
+    }
+    if (stepIndex <= 3) {
+        stepCompletion.step4 = false;
+        const visImg = document.getElementById("visualizeImage");
+        if (visImg) visImg.removeAttribute("src");
+    }
+}
+
+function showStep(index) {
+    currentStepIndex = Math.max(0, Math.min(index, stepIds.length - 1));
+    stepIds.forEach((id, i) => {
+        const panel = document.getElementById(id);
+        if (panel) panel.classList.toggle("is-hidden", i !== currentStepIndex);
+    });
+
+    if (stepNav) {
+        [...stepNav.querySelectorAll(".list-group-item")].forEach((btn, i) => {
+            btn.classList.toggle("active", i === currentStepIndex);
+        });
+    }
+    updateStepControls();
+}
+
+if (stepNav) {
+    stepNav.addEventListener("click", (e) => {
+        const target = e.target.closest("[data-step]");
+        if (!target) return;
+        const idx = stepIds.indexOf(target.dataset.step);
+        if (idx >= 0) showStep(idx);
+    });
+}
+
+document.getElementById("btnPrevStep")?.addEventListener("click", () => showStep(currentStepIndex - 1));
+document.getElementById("btnNextStep")?.addEventListener("click", () => {
+    if (!isCurrentStepCompleted(currentStepIndex)) {
+        if (currentStepIndex === 0) {
+            alert("请先完成第一步（上传或 AI 生成数据）");
+        } else if (currentStepIndex === 1) {
+            alert("请先完成数据清洗");
+        } else if (currentStepIndex === 2) {
+            alert("请先完成聚类分析");
+        } else if (currentStepIndex === 3) {
+            alert("请先完成降维可视化");
+        }
+        return;
+    }
+    showStep(currentStepIndex + 1);
+});
 
 function withLoading(buttonEl, loadingText, fn) {
     const oldText = buttonEl.textContent;
@@ -210,9 +345,7 @@ function renderPreviewTable(data) {
     state.previewColumns = columns;
     state.previewRows = previewRows;
     state.totalRows = Number(data?.total_rows ?? previewInfo?.shape?.rows ?? previewRows.length);
-    if (state.previewRows.length > 0) {
-        state.totalRows = state.previewRows.length;
-    }
+    if (!Number.isFinite(state.totalRows) || state.totalRows < 0) state.totalRows = previewRows.length;
     state.currentPage = 1;
 
     if (!columns.length) {
@@ -246,7 +379,7 @@ function renderPager() {
     const end = Math.min(state.currentPage * state.pageSize, state.totalRows);
 
     previewPager.innerHTML = `
-        <div class="small-hint">第 ${state.currentPage}/${totalPages} 页，显示 ${start}-${end} 行（共 ${state.totalRows} 行）</div>
+        <div class="small-hint">第 ${state.currentPage}/${totalPages} 页，显示 ${start}-${end} 行（共 ${state.totalRows} 条数据）</div>
         <div class="d-flex gap-2">
             <button class="btn btn-sm btn-outline-light" id="pagerPrev" ${state.currentPage <= 1 ? "disabled" : ""}>上一页</button>
             <button class="btn btn-sm btn-outline-light" id="pagerNext" ${state.currentPage >= totalPages ? "disabled" : ""}>下一页</button>
@@ -257,6 +390,35 @@ function renderPager() {
     const next = document.getElementById("pagerNext");
     if (prev) prev.addEventListener("click", () => { state.currentPage = Math.max(1, state.currentPage - 1); renderPreviewPage(); renderPager(); });
     if (next) next.addEventListener("click", () => { state.currentPage = Math.min(totalPages, state.currentPage + 1); renderPreviewPage(); renderPager(); });
+}
+
+function renderCleanStats(statistics) {
+    const panel = document.getElementById("cleanStatsPanel");
+    if (!panel) return;
+    if (!statistics) {
+        panel.innerHTML = "";
+        return;
+    }
+
+    const originalRows = Number(statistics.original_rows || 0);
+    const cleanedRows = Number(statistics.cleaned_rows || 0);
+    const keepRate = originalRows > 0 ? Math.max(0, Math.min(100, (cleanedRows / originalRows) * 100)) : 0;
+    const removeRate = 100 - keepRate;
+
+    panel.innerHTML = `
+        <div class="row g-2">
+            <div class="col-6 col-md-3"><div class="small border rounded p-2">原始行数<br><strong>${originalRows}</strong></div></div>
+            <div class="col-6 col-md-3"><div class="small border rounded p-2">清洗后行数<br><strong>${cleanedRows}</strong></div></div>
+            <div class="col-6 col-md-3"><div class="small border rounded p-2">空值删行<br><strong>${Number(statistics.rows_removed_by_null || 0)}</strong></div></div>
+            <div class="col-6 col-md-3"><div class="small border rounded p-2">异常值删行<br><strong>${Number(statistics.rows_removed_by_outlier || 0)}</strong></div></div>
+        </div>
+        <div class="mt-2 small-hint">保留率 ${keepRate.toFixed(1)}%（删除率 ${removeRate.toFixed(1)}%）</div>
+        <div class="progress" style="height: 8px;">
+            <div class="progress-bar bg-success" role="progressbar" style="width: ${keepRate.toFixed(1)}%"></div>
+            <div class="progress-bar bg-danger" role="progressbar" style="width: ${removeRate.toFixed(1)}%"></div>
+        </div>
+        <div class="small-hint mt-2">策略：空值=${statistics.remove_null_rows ? "删除行" : (statistics.fill_missing ? "填充" : "不处理")}；异常值=${statistics.outlier_mode || "none"}；阈值=${Number(statistics.outlier_std_threshold || 0)}</div>
+    `;
 }
 
 function parseCustomHeaders(rawValue) {
@@ -308,6 +470,9 @@ document.getElementById("btnLoadData").addEventListener("click", async (e) => {
         if (data && data.status === "error") throw new Error(parseErrorMessage(data, response.status, "上传失败"));
         renderPreviewTable(data);
         setFilePath(data.file_path || `temp/${file.name}`);
+        stepCompletion.step1 = true;
+        invalidateFrom(1);
+        updateStepControls();
     }).catch(err => alert(`上传失败: ${err.message}`));
 });
 
@@ -343,6 +508,9 @@ document.getElementById("btnGenerateData").addEventListener("click", async (e) =
         });
         setFilePath(data.file_path);
         renderPreviewTable(data);
+        stepCompletion.step1 = true;
+        invalidateFrom(1);
+        updateStepControls();
     }).catch(err => alert(`错误: ${err.message}`));
 });
 
@@ -352,10 +520,30 @@ document.getElementById("btnCleanData").addEventListener("click", async (e) => {
         alert("请先上传或生成数据。");
         return;
     }
+
+    const removeNullRows = Boolean(document.getElementById("cleanRemoveNullRows")?.checked);
+    const outlierMode = (document.getElementById("cleanOutlierMode")?.value || "none").trim();
+    const stdThreshold = Number(document.getElementById("cleanStdThreshold")?.value || 3);
+    if (!Number.isFinite(stdThreshold) || stdThreshold <= 0) {
+        alert("标准差阈值必须大于 0");
+        return;
+    }
+
     await withLoading(button, "清洗中...", async () => {
-        const data = await postJson("/api/py/clean-data", { file_path: state.currentFilePath });
+        const data = await postJson("/api/py/clean-data", {
+            file_path: state.currentFilePath,
+            remove_null_rows: removeNullRows,
+            fill_missing: !removeNullRows,
+            outlier_mode: outlierMode,
+            remove_outliers: outlierMode === "remove",
+            outlier_std_threshold: stdThreshold
+        }, "数据清洗失败");
         setFilePath(data.cleaned_file_path || data.file_path || state.currentFilePath);
         renderPreviewTable(data);
+        renderCleanStats(data.statistics);
+        stepCompletion.step2 = true;
+        invalidateFrom(2);
+        updateStepControls();
     }).catch(err => alert(`错误: ${err.message}`));
 });
 
@@ -374,6 +562,9 @@ document.getElementById("btnClustering").addEventListener("click", async (e) => 
         });
         document.getElementById("clusterImage").src = normalizeImageBase64(data.cluster_image_base64);
         document.getElementById("clusterStats").textContent = JSON.stringify(data.clustering_info, null, 2);
+        stepCompletion.step3 = true;
+        invalidateFrom(3);
+        updateStepControls();
     }).catch(err => alert(`错误: ${err.message}`));
 });
 
@@ -389,11 +580,15 @@ document.getElementById("btnVisualize").addEventListener("click", async (e) => {
             method: document.getElementById("reduceMethod").value
         });
         document.getElementById("visualizeImage").src = normalizeImageBase64(data.plot_base64);
+        stepCompletion.step4 = true;
+        updateStepControls();
     }).catch(err => alert(`错误: ${err.message}`));
 });
 
 // 页面加载时初始化
 window.addEventListener("load", () => {
+    showStep(0);
+    updateStepControls();
     // 初始化聊天窗口监听器
     setTimeout(sendContextToChatWidget, 500);
 });
