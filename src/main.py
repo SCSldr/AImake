@@ -617,9 +617,25 @@ async def split_data(req: SplitRequest): # 👈 改用模型接收
 
 # 接口 6: 模型训练
 @app.post('/model/train_manual')
-async def train_model(req: TrainRequest): # 👈 改用模型接收
+async def train_model(req: TrainRequest):
     try:
         df = load_dataframe(req.file_path)
+
+        # 1. 自动过滤掉所有非数字的“捣乱分子”
+        # 这样即使你没删 '2024Q2'，它也会被自动踢出特征集 X
+        numeric_df = df.select_dtypes(include=[np.number])
+
+        # 2. 确保目标列（Target）在里面
+        if req.target_column not in df.columns:
+            raise ValueError(f"找不到目标列: {req.target_column}")
+
+        # 3. 准备特征 X 和 目标 y
+        # X 只能包含数字列，且要排除掉目标列本身
+        X = numeric_df.drop(columns=[req.target_column] if req.target_column in numeric_df.columns else [])
+        y = df[req.target_column]
+
+        # 打印一下，看看哪些列被留下了
+        print(f"✅ 最终参与训练的特征有: {X.columns.tolist()}")
 
         if req.target_column not in df.columns:
             raise ValueError(f'目标列 "{req.target_column}" 不存在于数据中')
@@ -685,58 +701,68 @@ async def train_model(req: TrainRequest): # 👈 改用模型接收
         return JSONResponse(status_code=500, content={'error': '模型训练失败', 'details': str(e)})
 
 
-# 接口 7: 模型评估（测试集检测）
-@app.post('/model/evaluate')
-async def evaluate_model(req: EvaluateRequest):
+# ===================== 接口 6: 模型训练=====================
+@app.post('/model/train_manual')
+async def train_model(req: TrainRequest):
     try:
-        model_path_full = validate_file_path(req.model_path)
-        model_package = joblib.load(model_path_full)
+        df = load_dataframe(req.file_path)
+        target_col = req.target_column
 
-        model = model_package['model']
-        train_cols = model_package['train_cols']
-        label_encoder = model_package.get('label_encoder')
+        # --- [第一道防线] 检查目标列 ---
+        if target_col not in df.columns:
+            raise ValueError(f"目标列 '{target_col}' 消失了，请重新选择")
 
-        test_df = load_dataframe(req.test_file_path)
-        if req.target_column not in test_df.columns:
-            raise ValueError(f'目标列 "{req.target_column}" 不存在于测试集')
+        # --- [第二道防线] 暴力过滤特征 X ---
+        # 只拿数字列，且排除目标列
+        X_numeric = df.select_dtypes(include=[np.number])
+        X = X_numeric.drop(columns=[target_col] if target_col in X_numeric.columns else [])
+        train_cols = X.columns.tolist()
+        print(f"✅ 核心特征确认: {train_cols}")
 
-        x_test = test_df.drop(columns=[req.target_column])
-        y_test = test_df[req.target_column]
+        # --- [第三道防线] 核心：处理目标 y 的字符串病灶 ---
+        y = df[target_col]
 
-        x_test_dummies = pd.get_dummies(x_test)
-        x_test_aligned = x_test_dummies.reindex(columns=train_cols, fill_value=0)
+        # 如果目标列里混进了像 '2024Q2' 这样的脏数据，或者是纯字符串
+        if y.dtype == 'object' or not np.issubdtype(y.dtype, np.number):
+            print(f"⚠️ 警告：目标列 '{target_col}' 包含非数字，正在尝试强制转换...")
+            # 如果是做回归，尝试强转数字，转不了的变 NaN 删掉
+            y_numeric = pd.to_numeric(y, errors='coerce')
 
-        if label_encoder is not None:
-            y_test_encoded = label_encoder.transform(y_test)
+            if y_numeric.isnull().all():
+                # 说明这一列全是文字（比如：季度、行业）
+                # 这种情况下，自动转为分类编码 (LabelEncoding)
+                from sklearn.preprocessing import LabelEncoder
+                le = LabelEncoder()
+                y = le.fit_transform(y.astype(str))
+                label_encoder = le
+                print(f"✅ 已将分类目标转换为编码: {le.classes_.tolist()[:5]}...")
+            else:
+                # 说明是数字列里混了脏数据
+                valid_mask = y_numeric.notnull()
+                X = X[valid_mask]
+                y = y_numeric[valid_mask]
+                label_encoder = None
+                print(f"✅ 已剔除无法转为数字的脏数据行，剩余: {len(y)} 行")
         else:
-            y_test_encoded = y_test
+            label_encoder = None
 
-        y_pred = model.predict(x_test_aligned)
-        accuracy = float(model.score(x_test_aligned, y_test_encoded))
+        # --- 执行划分与训练 ---
+        from sklearn.model_selection import train_test_split
+        x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=req.test_size,
+                                                            random_state=req.random_state)
 
-        sample_predictions: List[Dict[str, Any]] = []
-        for i in range(min(10, len(y_test))):
-            pred_value = y_pred[i]
-            if label_encoder is not None:
-                pred_value = label_encoder.inverse_transform([pred_value])[0]
+        # 初始化模型 (根据 req.model_type)
+        # ... 这里保留你之前的 model 初始化代码 ...
 
-            sample_predictions.append({
-                'actual': to_python_value(y_test.iloc[i]),
-                'predicted': to_python_value(pred_value),
-                'correct': bool(y_test.iloc[i] == pred_value)
-            })
+        model.fit(x_train, y_train)
 
-        return {
-            'status': 'success',
-            'accuracy': round(accuracy, 4),
-            'total_samples': int(len(y_test)),
-            'sample_predictions': sample_predictions
-        }
+        # ... 后续保存和返回逻辑 ...
+        return {"status": "success", "accuracy": "..."}  # 这里补全你的返回逻辑
+
     except Exception as e:
-        logger.error(f'模型评估失败: {str(e)}\n{traceback.format_exc()}')
-        return JSONResponse(status_code=500, content={'error': '模型评估失败', 'details': str(e)})
-
-
+        import traceback
+        print(traceback.format_exc())
+        return JSONResponse(status_code=500, content={'error': str(e)})
 # 接口 8: 手动/文件预测
 @app.post('/model/predict_manual')
 async def predict_manual(req: PredictRequest):
@@ -801,6 +827,134 @@ async def health_check():
         'models_dir_exists': MODELS_DIR.exists()
     }
 
+
+class ClusterRequest(BaseModel):
+    file_path: str
+    n_clusters: int = 3
+    features: List[str] = None  # 用户选中的参与聚类的列
+
+
+# 2. 聚类训练与可视化接口
+@app.post('/clustering/train_and_visualize')  # 👈 必须和 Java 调用的路径完全一致
+async def train_and_visualize_clusters(req: ClusterRequest):
+    try:
+        df = load_dataframe(req.file_path)
+
+        # --- 核心逻辑：只拿数字列 ---
+        # 即使没选特征，我们也只针对数字进行聚类，自动过滤掉 '2024Q2'
+        X_numeric = df.select_dtypes(include=[np.number])
+
+        if req.features:
+            # 只取用户选中的、且确实是数字的列
+            cols = [c for c in req.features if c in X_numeric.columns]
+            X = X_numeric[cols]
+        else:
+            X = X_numeric
+
+        if X.empty:
+            raise ValueError("没有可用的数值特征进行聚类")
+
+        # 1. 标准化数据（聚类必做，否则量纲大的列会主导结果）
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+
+        # 2. 训练 K-Means
+        kmeans = KMeans(n_clusters=req.n_clusters, random_state=42, n_init=10)
+        clusters = kmeans.fit_transform(X_scaled)  # 这里的 clusters 是距离，不是标签
+        labels = kmeans.labels_  # 这才是每个点的分类标签
+
+        # 3. PCA 降维到 2D（为了在网页前端画图）
+        pca = PCA(n_components=2)
+        X_pca = pca.fit_transform(X_scaled)
+
+        # 4. 组装返回结果
+        # 将降维后的坐标、原始标签、以及一些展示信息拼在一起
+        plot_data = []
+        for i in range(len(df)):
+            plot_data.append({
+                'x': float(X_pca[i][0]),
+                'y': float(X_pca[i][1]),
+                'label': int(labels[i]),
+                # 顺便带点原始数据，方便前端 Hover 显示
+                'info': df.iloc[i].head(3).to_dict()
+            })
+
+        return {
+            'status': 'success',
+            'clusters': [int(l) for l in labels],
+            'plot_data': plot_data,
+            'statistics': {
+                'n_samples': len(df),
+                'n_features': X.shape[1],
+                'inertia': float(kmeans.inertia_)
+            }
+        }
+
+    except Exception as e:
+        import traceback
+        logger.error(f"聚类失败: {str(e)}\n{traceback.format_exc()}")
+        return JSONResponse(status_code=500, content={'error': str(e)})
+
+
+class VisualizeRequest(BaseModel):
+    file_path: str
+    features: List[str] = None
+    cluster_labels: List[int] = None  # 有些前端会把刚算好的标签传回来
+
+
+# 2. 补全这个丢失的 404 接口
+@app.post('/clustering/visualize')
+async def visualize_clusters(req: VisualizeRequest):
+    try:
+        df = load_dataframe(req.file_path)
+
+        # 强制只提取数字列进行降维
+        X_numeric = df.select_dtypes(include=[np.number])
+
+        if req.features:
+            X = X_numeric[[c for c in req.features if c in X_numeric.columns]]
+        else:
+            X = X_numeric
+
+        if X.empty:
+            raise ValueError("没有足够的数值特征进行可视化")
+
+        # 数据标准化
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+
+        # 使用 PCA 将数据降维到 2D 坐标
+        pca = PCA(n_components=2)
+        X_pca = pca.fit_transform(X_scaled)
+
+        # 组装绘图数据
+        plot_data = []
+        # 如果请求里没带标签，我们默认给个 0（或者你可以尝试从 df 中寻找 'cluster' 列）
+        labels = req.cluster_labels if req.cluster_labels else [0] * len(df)
+
+        for i in range(len(df)):
+            plot_data.append({
+                'x': float(X_pca[i][0]),
+                'y': float(X_pca[i][1]),
+                'label': int(labels[i]),
+                'info': {
+                    '名称': str(df.iloc[i].get('公司名称', '未知')),
+                    '行业': str(df.iloc[i].get('行业', '未知'))
+                }
+            })
+
+        return {
+            'status': 'success',
+            'plot_data': plot_data,
+            'pca_info': {
+                'explained_variance': [float(v) for v in pca.explained_variance_ratio_]
+            }
+        }
+
+    except Exception as e:
+        import traceback
+        logger.error(f"可视化生成失败: {str(e)}\n{traceback.format_exc()}")
+        return JSONResponse(status_code=500, content={'error': str(e)})
 
 # ===================== 根路由 =====================
 @app.get('/')

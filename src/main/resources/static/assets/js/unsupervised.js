@@ -585,6 +585,37 @@ document.getElementById("btnVisualize").addEventListener("click", async (e) => {
     }).catch(err => alert(`错误: ${err.message}`));
 });
 
+
+function renderClusterChart(data) {
+    const chartDom = document.getElementById('clusterChart');
+    const myChart = echarts.init(chartDom);
+
+    // 按标签分组数据
+    const seriesMap = {};
+    data.forEach(item => {
+        if (!seriesMap[item.label]) seriesMap[item.label] = [];
+        seriesMap[item.label].push([item.x, item.y]);
+    });
+
+    const series = Object.keys(seriesMap).map(label => ({
+        name: `簇 ${label}`,
+        type: 'scatter',
+        data: seriesMap[label],
+        symbolSize: 10
+    }));
+
+    const option = {
+        title: { text: '聚类结果可视化' },
+        tooltip: { trigger: 'item' },
+        legend: { bottom: 10 },
+        xAxis: { scale: true },
+        yAxis: { scale: true },
+        series: series
+    };
+
+    myChart.setOption(option);
+}
+
 // 页面加载时初始化
 window.addEventListener("load", () => {
     showStep(0);
