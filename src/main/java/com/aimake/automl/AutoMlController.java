@@ -122,7 +122,7 @@ public class AutoMlController {
             // 6. 将 Python 服务的响应原样返回给客户端
             return response;
         } catch (Exception e) {
-            // 如果请求失败（例如 Python 服务未启动），返回一个服务器内部错误响应
+            // 如果请求失败，返回一个服务器内部错误响应
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("请求 Python 服务失败: " + e.getMessage());
         }
@@ -142,15 +142,47 @@ public class AutoMlController {
             }
         }
 
-        // 兼容前端的短路径写法
+        // 兼容前端的短路径写法，转换为 Python FastAPI 的真实路径
         return switch (path) {
+            // AI 对话
             case "/ai-chat" -> "/process/ai_chat";
+
+            // 数据生成
             case "/generate-data" -> "/process/generate";
+
+            // 数据清洗
             case "/clean-data" -> "/process/clean";
+
+            // 数据质量检测
+            case "/check-data" -> "/process/check-data-quality";
+            case "/calculate-outliers" -> "/process/calculate-outliers";
+
+            // 特征工程
             case "/process-features" -> "/process/features";
+
+            // 数据划分
+            case "/process/split" -> "/process/split";
+
+            // 模型训练
             case "/train-manual" -> "/model/train_manual";
+
+            // 模型评估 - 支持两种格式
             case "/evaluate-model" -> "/model/evaluate";
+            case "/model/evaluate" -> "/model/evaluate";
+
+            // 模型预测 - 支持两种格式
+            case "/predict-manual" -> "/model/predict_manual";
+            case "/model/predict_manual" -> "/model/predict_manual";
+
+            // 预测可视化（新增）
+            case "/model/visualize_predictions" -> "/model/visualize_predictions";
+
+            // 聚类 - 支持两种格式
             case "/clustering/train" -> "/clustering/train_and_visualize";
+            case "/clustering/train_and_visualize" -> "/clustering/train_and_visualize";
+            case "/clustering/visualize" -> "/clustering/visualize";
+
+            // 默认：直接使用 Python 端的路径（带上 /process, /model, /clustering 等前缀）
             default -> path;
         };
     }

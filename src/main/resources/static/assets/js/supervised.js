@@ -6,6 +6,8 @@ const state = {
     featureFilePath: "",
     modelPath: "",
     targetColumn: "",
+    selectedFeatureColumns: [],
+    trainedFeatureColumns: [],
     previewRows: [],
     previewColumns: [],
     totalRows: 0,
@@ -200,13 +202,6 @@ function setFilePath(path) {
     currentFilePathText.textContent = `当前文件：${state.currentFilePath || "未设置"}`;
     sendContextToChatWidget();
 }
-
-// ... (保留所有其他业务逻辑函数，如 withLoading, postJson, renderPreviewTable 等)
-// 为了简洁，这里省略了未修改的函数，实际写入时会保留它们。
-
-// ==============================================================================
-// 辅助函数 (未修改)
-// ==============================================================================
 const stepIds = ["step1", "step2", "step3", "step4", "step5"];
 let currentStepIndex = 0;
 const stepCompletion = {
@@ -249,17 +244,21 @@ function invalidateFrom(stepIndex) {
     if (stepIndex <= 1) {
         stepCompletion.step2Cleaned = false;
         stepCompletion.step2Featured = false;
+        state.selectedFeatureColumns = [];
+        state.trainedFeatureColumns = [];
     }
     if (stepIndex <= 2) {
         stepCompletion.step3 = false;
         state.splitTrainPath = "";
         state.splitTestPath = "";
+        state.trainedFeatureColumns = [];
         const splitResult = document.getElementById("splitResult");
         if (splitResult) splitResult.textContent = "";
     }
     if (stepIndex <= 3) {
         stepCompletion.step4 = false;
         state.modelPath = "";
+        state.trainedFeatureColumns = [];
     }
 }
 
@@ -336,6 +335,84 @@ function escapeHtml(value) {
         .replace(/'/g, "&#39;");
 }
 
+const OUTLIER_PERCENT_BY_STD = {
+    "1.0": 31.7,
+    "1.5": 13.4,
+    "2.0": 4.6,
+    "2.5": 1.2,
+    "3.0": 0.3,
+    "3.5": 0.05,
+    "4.0": 0.01,
+    "4.5": 0.001,
+    "5.0": 0.0001,
+    "5.5": 0.00001,
+    "6.0": 0.000001
+};
+
+function updateOutlierPreviewHint(stdValue) {
+    const key = Number(stdValue).toFixed(1);
+    const value = OUTLIER_PERCENT_BY_STD[key];
+    const hint = document.getElementById("outlierPreviewHint");
+    if (!hint) return;
+    hint.textContent = `相当于原数量的${value !== undefined ? value : 0}%`;
+}
+
+function getActiveTargetColumn() {
+    const inputVal = (document.getElementById("targetColumn")?.value || "").trim();
+    return inputVal || (state.targetColumn || "").trim();
+}
+
+function normalizeColumnName(value) {
+    return String(value || "").trim().toLowerCase();
+}
+
+function getManualTemplateColumns() {
+    const sourceCols =
+        (Array.isArray(state.trainedFeatureColumns) && state.trainedFeatureColumns.length ? state.trainedFeatureColumns : null)
+        || (Array.isArray(state.selectedFeatureColumns) && state.selectedFeatureColumns.length ? state.selectedFeatureColumns : null)
+        || (Array.isArray(state.previewColumns) ? state.previewColumns : []);
+
+    const cols = [...new Set((sourceCols || []).map(col => String(col).trim()).filter(Boolean))];
+    if (!cols.length) return [];
+    const activeTarget = getActiveTargetColumn();
+    if (!activeTarget) return cols;
+    const targetNorm = normalizeColumnName(activeTarget);
+    return cols.filter(col => normalizeColumnName(col) !== targetNorm);
+}
+
+function updateManualHeaderTemplate() {
+    const box = document.getElementById("manualHeaderTemplateBox");
+    if (!box) return;
+    const cols = getManualTemplateColumns();
+    if (!cols.length) {
+        box.value = '{"feature_1": "", "feature_2": ""}';
+        return;
+    }
+    const templateObj = {};
+    cols.forEach(col => {
+        templateObj[col] = "";
+    });
+    box.value = JSON.stringify(templateObj, null, 2);
+}
+
+function renderEvaluateVisualization(imageBase64, taskType, totalSamples) {
+    const panel = document.getElementById("evaluateVisualizationPanel");
+    const img = document.getElementById("evaluateVisualizationImage");
+    const meta = document.getElementById("evaluateVisualizationMeta");
+    if (!panel || !img || !meta) return;
+
+    if (!imageBase64) {
+        panel.classList.add("d-none");
+        img.removeAttribute("src");
+        meta.textContent = "";
+        return;
+    }
+
+    img.src = imageBase64;
+    meta.textContent = `可视化类型：${taskType === "classification" ? "分类" : "回归"}，样本数：${totalSamples || 0}`;
+    panel.classList.remove("d-none");
+}
+
 function renderFeatureCheckbox(columns) {
     const wrap = document.getElementById("featureCheckboxWrap");
     wrap.innerHTML = "";
@@ -380,6 +457,7 @@ function renderPreviewTable(payload) {
     renderPreviewPage();
     renderPager();
     renderFeatureCheckbox(state.previewColumns);
+    updateManualHeaderTemplate();
 }
 
 function renderPreviewPage() {
@@ -475,63 +553,46 @@ document.getElementById("btnPreviewExcel").addEventListener("click", async (e) =
     const file = document.getElementById("excelFile").files[0];
     clearStep1Error();
     if (!file) {
-
         showStep1Error("请先选择 Excel 文件（.xlsx/.xls）");
+        notify.warning("请先选择 Excel 文件（.xlsx/.xls）");
         return;
     }
-
-    console.log("========== [前端上传开始] ==========");
-    console.log("✓ 文件已选择");
-    console.log("  文件名:", file.name);
-    console.log("  文件大小:", file.size, "bytes");
-    console.log("  文件类型:", file.type);
 
     await withLoading(button, "上传并预览", "处理中...", async () => {
         const formData = new FormData();
         formData.append("file", file);
         
-        console.log("✓ FormData 已准备，准备发送 POST 请求...");
-        console.log("URL:/api/preview-excel");
-        
+        const notif = notify.loading(`📤 上传中... (${file.name})`);
         try {
             const response = await fetch("/api/preview-excel", { method: "POST", body: formData });
-            console.log("✓ 收到后端响应");
-            console.log("  状态码:", response.status);
-            console.log("  Content-Type:", response.headers.get("Content-Type"));
-            
-            const data = await response.json().catch((err) => {
-                console.error("✗ JSON 解析失败:", err.message);
-                return {};
-            });
-            
-            console.log("✓ 响应 JSON 已解析");
-            console.log("  响应内容:", JSON.stringify(data, null, 2));
-            
+
+            const data = await response.json().catch((err) => ({}));
+
             if (!response.ok) {
-                console.error("✗ 响应状态不正常");
+                notif.update(`❌ 上传失败: ${parseErrorMessage(data, response.status, "上传失败")}`, 'error');
                 throw new Error(parseErrorMessage(data, response.status, "上传失败"));
             }
             if (data && data.status === "error") {
-                console.error("✗ 后端返回错误状态");
+                notif.update(`❌ 解析失败: ${parseErrorMessage(data, response.status, "解析失败")}`, 'error');
                 throw new Error(parseErrorMessage(data, response.status, "解析失败"));
             }
 
-            console.log("✓ 所有检查通过，准备渲染表格");
+            notif.update(`✅ 数据加载成功，共 ${data.total_rows} 行`, 'success');
             renderPreviewTable(data);
             setFilePath(data.file_path || `temp/${file.name}`);
             stepCompletion.step1 = true;
             invalidateFrom(1);
             updateStepControls();
-            console.log("✓ 表格渲染完成");
-            console.log("========== [前端上传成功] ==========");
+
+            setTimeout(() => notif.close(), 2000);
         } catch (fetchErr) {
-            console.error("✗ fetch 请求出错:", fetchErr.message);
+            notif.update(`❌ 错误: ${fetchErr.message}`, 'error');
+            showStep1Error(`第一步失败：${fetchErr.message}`);
             throw fetchErr;
         }
     }).catch((err) => {
-        console.error("========== [前端上传失败] ==========");
-        console.error("错误信息:", err.message);
-        showStep1Error(`第一步失败：${err.message}（详情见控制台日志）`);
+        notify.error(`上传失败: ${err.message}`);
+        showStep1Error(`第一步失败：${err.message}`);
     });
 });
 
@@ -542,11 +603,13 @@ document.getElementById("btnGenerateData").addEventListener("click", async (e) =
     const rowCountInput = Number(document.getElementById("aiRowCount").value || MIN_AI_ROWS);
     if (!prompt) {
         showStep1Error("请先输入 AI 生成需求");
+        notify.warning("请先输入 AI 生成需求");
         return;
     }
     const rowCount = Math.floor(rowCountInput);
     if (!Number.isFinite(rowCount) || rowCount < MIN_AI_ROWS || rowCount > MAX_AI_ROWS) {
         showStep1Error(`生成行数必须在 ${MIN_AI_ROWS}~${MAX_AI_ROWS} 之间`);
+        notify.warning(`生成行数必须在 ${MIN_AI_ROWS}~${MAX_AI_ROWS} 之间`);
         return;
     }
 
@@ -555,39 +618,127 @@ document.getElementById("btnGenerateData").addEventListener("click", async (e) =
         customHeaders = parseCustomHeaders(document.getElementById("aiCustomHeaders").value);
     } catch (err) {
         showStep1Error(err.message);
+        notify.warning(err.message);
         return;
     }
 
     clearStep1Error();
+    const notif = notify.loading("🤖 AI 正在生成数据中...");
 
     await withLoading(button, "AI 生成并预览", "处理中...", async () => {
         const finalPrompt = buildGeneratePrompt(prompt, customHeaders);
-        const data = await postJson("/api/py/generate-data", {
+        const data = await postJson("api/py/generate-data", {
             prompt: finalPrompt,
             custom_headers: customHeaders,
             row_count: rowCount,
             rowCount
-        }, "AI 生成失败");
+        });
+
+        notif.update(`✅ 数据生成成功，共 ${data.total_rows} 行`, 'success');
         if (data.file_path) setFilePath(data.file_path);
         renderPreviewTable(data);
         stepCompletion.step1 = true;
         invalidateFrom(1);
         updateStepControls();
-    }).catch((err) => showStep1Error(`AI 生成失败：${err.message}`));
+
+        setTimeout(() => notif.close(), 2000);
+    }).catch((err) => {
+        notif.update(`❌ AI 生成失败: ${err.message}`, 'error');
+        showStep1Error(`AI 生成失败：${err.message}`);
+    });
+});
+
+// Step2 数据质量检测
+document.getElementById("btnCheckQuality").addEventListener("click", async (e) => {
+    const button = e.target;
+    if (!state.currentFilePath) {
+        notify.warning("请先完成第一步");
+        return;
+    }
+
+    const notif = notify.loading("📊 正在检测数据质量...");
+
+    try {
+        const response = await fetch("api/py/check-data", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ file_path: state.currentFilePath })
+        });
+        const data = await response.json();
+
+        if (!response.ok || data.status === "error") {
+            throw new Error(data.details || "质量检测失败");
+        }
+
+        // 生成质量报告
+        let reportHtml = "";
+
+        if (data.duplicates.has_duplicates) {
+            reportHtml += `<div class="mb-2">🔁 <strong>重复行：</strong>${data.duplicates.duplicate_rows} 行（${data.duplicates.duplicate_ratio}%）</div>`;
+            document.getElementById("duplicateHint").innerHTML = `<strong>${data.duplicates.duplicate_rows}</strong> 行重复`;
+        } else {
+            document.getElementById("duplicateHint").innerHTML = "无重复行 ✓";
+        }
+
+        if (data.non_standard_values.has_non_standard) {
+            reportHtml += `<div class="mb-2">⚠️ <strong>非规范值：</strong>${data.non_standard_values.problematic_cells} 个单元格（${data.non_standard_values.problematic_ratio}%）`;
+            const issues = [];
+            for (const [col, details] of Object.entries(data.non_standard_values.issues_by_column)) {
+                if (details.comma_numbers > 0) issues.push(`${col}中有${details.comma_numbers}个逗号分隔的数字`);
+                if (details.iso_dates > 0) issues.push(`${col}中有${details.iso_dates}个ISO日期格式`);
+                if (details.leading_spaces > 0) issues.push(`${col}中有${details.leading_spaces}个含空格的值`);
+            }
+            if (issues.length > 0) {
+                reportHtml += `<ul style="margin: 8px 0 0 20px;">` + issues.map(i => `<li style="font-size: 12px;">${i}</li>`).join("") + `</ul>`;
+            }
+            reportHtml += `</div>`;
+            document.getElementById("nonStandardHint").innerHTML = `<strong>${data.non_standard_values.problematic_cells}</strong> 个问题`;
+        } else {
+            document.getElementById("nonStandardHint").innerHTML = "无非规范值 ✓";
+        }
+
+        if (!data.quality_issues.has_issues) {
+            reportHtml = '<div class="mb-2">✅ 数据质量良好，无明显问题</div>';
+        }
+
+        const panel = document.getElementById("qualityReportPanel");
+        document.getElementById("qualityReportContent").innerHTML = reportHtml;
+        panel.classList.remove("d-none");
+
+        notif.update(`✅ 检测完成：${data.quality_issues.issue_count} 个问题`, 'success');
+        setTimeout(() => notif.close(), 2000);
+    } catch (err) {
+        notif.update(`❌ 检测失败: ${err.message}`, 'error');
+        notify.error(`检测失败: ${err.message}`);
+    }
+});
+
+// 实时计算异常值数量（监听滑块变化）
+document.getElementById("cleanStdThreshold").addEventListener("input", (e) => {
+    const stdValue = parseFloat(e.target.value);
+    document.getElementById("stdThresholdValue").textContent = stdValue.toFixed(1);
+    updateOutlierPreviewHint(stdValue);
 });
 
 // Step2 预处理
 document.getElementById("btnCleanData").addEventListener("click", async (e) => {
     const button = e.target;
-    if (!state.currentFilePath) return alert("请先完成第一步");
+    if (!state.currentFilePath) {
+        notify.warning("请先完成第一步");
+        return;
+    }
 
     const removeNullRows = Boolean(document.getElementById("cleanRemoveNullRows")?.checked);
+    const removeDuplicates = Boolean(document.getElementById("cleanRemoveDuplicates")?.checked);
+    const standardizeValues = Boolean(document.getElementById("cleanStandardizeValues")?.checked);
     const outlierMode = (document.getElementById("cleanOutlierMode")?.value || "none").trim();
     const stdThreshold = Number(document.getElementById("cleanStdThreshold")?.value || 3);
     if (!Number.isFinite(stdThreshold) || stdThreshold <= 0) {
-        alert("标准差阈值必须大于 0");
+        notify.warning("标准差阈值必须大于 0");
         return;
     }
+
+    const notif = notify.loading("🧹 正在清洗数据...");
 
     await withLoading(button, "一键清洗", "处理中...", async () => {
         const data = await postJson("/api/py/clean-data", {
@@ -596,45 +747,85 @@ document.getElementById("btnCleanData").addEventListener("click", async (e) => {
             fill_missing: !removeNullRows,
             outlier_mode: outlierMode,
             remove_outliers: outlierMode === "remove",
-            outlier_std_threshold: stdThreshold
+            outlier_std_threshold: stdThreshold,
+            remove_duplicates: removeDuplicates,
+            standardize_values: standardizeValues
         }, "数据清洗失败");
+
         setFilePath(data.cleaned_file_path || data.file_path || state.currentFilePath);
         renderPreviewTable(data);
         renderCleanStats(data.statistics);
+
+        const stats = data.statistics;
+        const cleanedRows = stats.cleaned_rows || 0;
+        const kept = stats.cleaned_rows && stats.original_rows ?
+            ((cleanedRows / stats.original_rows) * 100).toFixed(1) : '0';
+
+        let details = `保留 ${kept}% (${cleanedRows} 行)`;
+        if (removeDuplicates && stats.rows_removed_by_duplicate) details += `，删除重复 ${stats.rows_removed_by_duplicate}`;
+        if (standardizeValues && stats.rows_standardized) details += `，规范化 ${stats.rows_standardized}`;
+
+        notif.update(`✅ 清洗完成：${details}`, 'success');
         stepCompletion.step2Cleaned = true;
         stepCompletion.step2Featured = false;
         invalidateFrom(2);
         updateStepControls();
-    }).catch((err) => alert("清洗失败：" + err.message));
+
+        setTimeout(() => notif.close(), 2000);
+    }).catch((err) => {
+        notif.update(`❌ 清洗失败: ${err.message}`, 'error');
+        notify.error(`清洗失败: ${err.message}`);
+    });
 });
 
 document.getElementById("btnProcessFeatures").addEventListener("click", async (e) => {
     const button = e.target;
     const selectedFeatures = getSelectedFeatures();
-    if (!state.currentFilePath) return alert("请先准备数据");
-    if (!selectedFeatures.length) return alert("请至少选择一个特征列");
+    if (!state.currentFilePath) {
+        notify.warning("请先准备数据");
+        return;
+    }
+    if (!selectedFeatures.length) {
+        notify.warning("请至少选择一个特征列");
+        return;
+    }
+
+    const notif = notify.loading("⚙️ 正在执行特征工程...");
 
     await withLoading(button, "执行特征工程", "处理中...", async () => {
         const data = await postJson("/api/py/process-features", {
             file_path: state.currentFilePath,
             categorical_features: selectedFeatures
         }, "特征工程失败");
+        state.selectedFeatureColumns = [...selectedFeatures];
         state.featureFilePath = data.feature_file_path || data.file_path || state.currentFilePath;
         setFilePath(state.featureFilePath);
         renderPreviewTable(data);
+
+        notif.update(`✅ 特征工程完成：处理 ${selectedFeatures.length} 个特征`, 'success');
         stepCompletion.step2Featured = true;
         invalidateFrom(2);
         updateStepControls();
-    }).catch((err) => alert("特征处理失败：" + err.message));
+
+        setTimeout(() => notif.close(), 2000);
+    }).catch((err) => {
+        notif.update(`❌ 特征处理失败: ${err.message}`, 'error');
+        notify.error(`特征处理失败: ${err.message}`);
+    });
 });
 
 // Step3 划分
 document.getElementById("btnSplitData").addEventListener("click", async (e) => {
     const button = e.target;
-    if (!state.currentFilePath) return alert("请先完成前面步骤");
+    if (!state.currentFilePath) {
+        notify.warning("请先完成前面步骤");
+        return;
+    }
 
     const testSize = Number(document.getElementById("testSize").value || 0.2);
     const randomState = Number(document.getElementById("randomState").value || 42);
+
+    const notif = notify.loading("📊 正在执行划分...");
 
     await withLoading(button, "执行划分", "处理中...", async () => {
         const data = await postJson("/api/py/process/split", {
@@ -644,22 +835,55 @@ document.getElementById("btnSplitData").addEventListener("click", async (e) => {
         }, "训练测试划分失败");
         state.splitTrainPath = data.train_file_path || "";
         state.splitTestPath = data.test_file_path || "";
-        document.getElementById("splitResult").textContent = `划分完成：训练集 ${state.splitTrainPath}，测试集 ${state.splitTestPath}`;
+
+        // 优先读取后端返回的统计；若缺失则按当前总行数兜底估算，避免显示 ?
+        let trainRows = Number(data.statistics?.train_rows ?? data.train_rows);
+        let testRows = Number(data.statistics?.test_rows ?? data.test_rows);
+        if (!Number.isFinite(trainRows) || !Number.isFinite(testRows)) {
+            const total = Number(state.totalRows || 0);
+            if (Number.isFinite(total) && total > 0) {
+                testRows = Number.isFinite(testRows) ? testRows : Math.round(total * testSize);
+                trainRows = Number.isFinite(trainRows) ? trainRows : Math.max(0, total - testRows);
+            }
+        }
+
+        const trainText = Number.isFinite(trainRows) ? String(Math.max(0, Math.round(trainRows))) : "?";
+        const testText = Number.isFinite(testRows) ? String(Math.max(0, Math.round(testRows))) : "?";
+        document.getElementById("splitResult").textContent = `✅ 划分完成：训练集 ${trainText} 行，测试集 ${testText} 行`;
+
+        notif.update(`✅ 数据划分完成（训练:测试 = ${(1-testSize).toFixed(1)}:${testSize.toFixed(1)})`, 'success');
         stepCompletion.step3 = true;
         invalidateFrom(3);
         updateStepControls();
-    }).catch((err) => alert("划分失败：" + err.message));
+
+        setTimeout(() => notif.close(), 2000);
+    }).catch((err) => {
+        notif.update(`❌ 划分失败: ${err.message}`, 'error');
+        notify.error(`划分失败: ${err.message}`);
+    });
 });
 
 // Step4 训练
 document.getElementById("btnTrainModel").addEventListener("click", async (e) => {
     const button = e.target;
+    const modelReportContent = document.getElementById("modelReportContent");
     const targetColumn = document.getElementById("targetColumn").value.trim();
     const modelType = document.getElementById("modelType").value;
-    if (!targetColumn) return alert("请填写目标列名");
+    if (!targetColumn) {
+        notify.warning("请填写目标列名");
+        return;
+    }
 
     const trainPath = state.splitTrainPath || state.currentFilePath;
-    if (!trainPath) return alert("请先准备训练数据");
+    if (!trainPath) {
+        notify.warning("请先准备训练数据");
+        return;
+    }
+
+    const notif = notify.loading(`🤖 正在训练 ${modelType} 模型...`);
+    if (modelReportContent) {
+        modelReportContent.innerHTML = `<span class="text-muted">模型训练中，请稍候...</span>`;
+    }
 
     await withLoading(button, "开始训练", "处理中...", async () => {
         const data = await postJson("/api/py/train-manual", {
@@ -669,18 +893,51 @@ document.getElementById("btnTrainModel").addEventListener("click", async (e) => 
         }, "模型训练失败");
         state.modelPath = data.model_path || "";
         state.targetColumn = targetColumn;
+        const trainedCols = data.train_cols || data.train_columns || data.feature_columns || data.features || [];
+        state.trainedFeatureColumns = Array.isArray(trainedCols) ? trainedCols : [];
+        updateManualHeaderTemplate();
+
+        const trainAcc = data.accuracy?.train ? (data.accuracy.train * 100).toFixed(2) : "?";
+        const testAcc = data.accuracy?.test ? (data.accuracy.test * 100).toFixed(2) : "?";
+        if (modelReportContent) {
+            modelReportContent.innerHTML = `<div class="text-success">训练成功：训练准确率 ${trainAcc}%，测试准确率 ${testAcc}%</div>`;
+        }
+
+        notif.update(`✅ 模型训练完成！训练准确率: ${trainAcc}%, 测试准确率: ${testAcc}%`, 'success');
         stepCompletion.step4 = true;
         updateStepControls();
-        alert("训练完成");
-    }).catch((err) => alert("训练失败：" + err.message));
+
+        setTimeout(() => notif.close(), 2000);
+    }).catch((err) => {
+        if (modelReportContent) {
+            modelReportContent.innerHTML = `<div class="text-danger">训练失败：${escapeHtml(err.message || "未知错误")}</div>`;
+        }
+        notify.error(`训练失败: ${err.message}`);
+    });
+});
+
+document.getElementById("targetColumn")?.addEventListener("input", () => {
+    updateManualHeaderTemplate();
 });
 
 // Step5 检测
 document.getElementById("btnEvaluate").addEventListener("click", async (e) => {
     const button = e.target;
-    if (!state.modelPath) return alert("请先完成模型训练");
-    if (!state.splitTestPath) return alert("请先执行训练测试划分");
-    if (!state.targetColumn) return alert("请先填写并训练目标列");
+    if (!state.modelPath) {
+        notify.warning("请先完成模型训练");
+        return;
+    }
+    if (!state.splitTestPath) {
+        notify.warning("请先执行训练测试划分");
+        return;
+    }
+    if (!state.targetColumn) {
+        notify.warning("请先填写并训练目标列");
+        return;
+    }
+
+    const notif = notify.loading("📈 正在在测试集上评估...");
+    renderEvaluateVisualization(null);
 
     await withLoading(button, "测试集检测", "处理中...", async () => {
         const data = await postJson("/api/py/model/evaluate", {
@@ -690,40 +947,184 @@ document.getElementById("btnEvaluate").addEventListener("click", async (e) => {
         }, "测试集检测失败");
 
         const samples = Array.isArray(data.sample_predictions) ? data.sample_predictions.slice(0, 5) : [];
-        document.getElementById("evaluateResult").innerHTML = `检测完成：准确率 ${data.accuracy ?? "-"}，样本数 ${data.total_samples ?? "-"}<br>${samples.map(s => `实际:${escapeHtml(s.actual)} / 预测:${escapeHtml(s.predicted)}`).join("<br>")}`;
-    }).catch((err) => alert("检测失败：" + err.message));
+        const isRegression = data.task_type === "regression";
+
+        if (isRegression) {
+            const r2 = Number(data.metrics?.r2 ?? data.accuracy);
+            const mae = Number(data.metrics?.mae);
+            const rmse = Number(data.metrics?.rmse);
+            const r2Text = Number.isFinite(r2) ? r2.toFixed(4) : "?";
+            const maeText = Number.isFinite(mae) ? mae.toFixed(4) : "?";
+            const rmseText = Number.isFinite(rmse) ? rmse.toFixed(4) : "?";
+            const explainedPct = Number.isFinite(r2) ? (r2 * 100).toFixed(2) : "?";
+            const rmseVsMae = Number.isFinite(rmse) && Number.isFinite(mae)
+                ? (rmse > mae ? "高于" : (rmse < mae ? "低于" : "接近"))
+                : "接近";
+            const sampleStr = samples
+                .map(s => {
+                    const predictedNum = Number(s.predicted);
+                    const actualNum = Number(s.actual);
+                    const rawError = Number(s.error);
+                    const finalError = Number.isFinite(rawError)
+                        ? rawError
+                        : (Number.isFinite(predictedNum) && Number.isFinite(actualNum) ? predictedNum - actualNum : NaN);
+
+                    const predictedText = Number.isFinite(predictedNum)
+                        ? predictedNum.toFixed(2)
+                        : escapeHtml(s.predicted);
+                    const errorText = Number.isFinite(finalError)
+                        ? Math.abs(finalError).toFixed(2)
+                        : "--";
+
+                    return `实际:${escapeHtml(s.actual)} → 预测:${predictedText} (误差:${errorText})`;
+                })
+                .join("<br>");
+
+            const metricExplainHtml = `
+                <div class="small-hint mt-2" style="background-color: rgba(46, 139, 87, 0.15); color: #2e8b57; border: 1px solid rgba(46, 139, 87, 0.4); border-radius: 8px; padding: 12px 16px; white-space: pre-line; font-weight: 500;backdrop-filter: blur(4px);"><strong>??解读：</strong>
+R^2 —— 决定系数
+含义：它代表模型解释了因变量中 ${explainedPct}% 的波动。
+MAE (Mean Absolute Error) —— 平均绝对误差
+含义：它代表预测值与真实值之间差距的绝对平均值，在你的模型中平均每次预测偏离约 ${maeText} 个单位。
+RMSE (Root Mean Square Error) —— 均方根误差
+含义：它反映预测值偏离真实值的离散程度。你的 RMSE (${rmseText}) ${rmseVsMae} MAE (${maeText})，说明误差点对结果有一定影响。
+                </div>
+            `;
+
+            document.getElementById("evaluateResult").innerHTML =
+                `<strong>R2: ${r2Text}</strong> (测试样本: ${data.total_samples || 0})` +
+                `<br>MAE: ${maeText}，RMSE: ${rmseText}` +
+                metricExplainHtml +
+                (sampleStr ? `<br>${sampleStr}` : "");
+
+            notif.update(`✅ 评估完成：R2=${r2Text}`, 'success');
+        } else {
+            const accuracy = Number(data.accuracy);
+            const accuracyText = Number.isFinite(accuracy) ? (accuracy * 100).toFixed(2) : "?";
+            const sampleStr = samples
+                .map(s => {
+                    const predictedNum = Number(s.predicted);
+                    const predictedText = Number.isFinite(predictedNum)
+                        ? predictedNum.toFixed(2)
+                        : escapeHtml(s.predicted);
+                    return `${s.correct ? "✓" : "✗"} 实际:${escapeHtml(s.actual)} → 预测:${predictedText}`;
+                })
+                .join("<br>");
+
+            document.getElementById("evaluateResult").innerHTML =
+                `<strong>准确率: ${accuracyText}%</strong> (测试样本: ${data.total_samples || 0})` +
+                (sampleStr ? `<br>${sampleStr}` : "");
+
+            notif.update(`✅ 评估完成：准确率 ${accuracyText}%`, 'success');
+        }
+        try {
+            const vizData = await postJson("/api/py/model/visualize_predictions", {
+                model_path: state.modelPath,
+                test_file_path: state.splitTestPath,
+                target_column: state.targetColumn
+            }, "预测可视化生成失败");
+            renderEvaluateVisualization(vizData.visualization_image, vizData.task_type, vizData.metrics?.total_samples);
+        } catch (vizErr) {
+            renderEvaluateVisualization(null);
+            notify.warning(`评估已完成，但可视化生成失败：${vizErr.message}`);
+        }
+
+        setTimeout(() => notif.close(), 2000);
+    }).catch((err) => {
+        notif.update(`❌ 评估失败: ${err.message}`, 'error');
+        notify.error(`评估失败: ${err.message}`);
+    });
 });
 
 // Step5 手动预测
 document.getElementById("btnManualPredict").addEventListener("click", async (e) => {
     const button = e.target;
-    if (!state.modelPath) return alert("请先完成模型训练");
+    if (!state.modelPath) {
+        notify.warning("请先完成模型训练");
+        return;
+    }
 
     const inputText = document.getElementById("manualPredictInput").value.trim();
-    if (!inputText) return alert("请先输入 JSON 特征");
+    if (!inputText) {
+        notify.warning("请先输入 JSON 特征");
+        return;
+    }
 
     let manualFeatures;
     try {
         manualFeatures = JSON.parse(inputText);
     } catch (err) {
-        alert("JSON 格式错误，请检查大括号和引号");
+        notify.error("JSON 格式错误，请检查大括号和引号");
         return;
     }
+
+    const notif = notify.loading("🔮 正在进行预测...");
 
     await withLoading(button, "执行手动预测", "处理中...", async () => {
         const data = await postJson("/api/py/model/predict_manual", {
             model_path: state.modelPath,
             manual_features: manualFeatures
         }, "手动预测失败");
+        console.log("准备发送给后端的数据：", manualFeatures);
 
+        const targetName = getActiveTargetColumn() || "prediction";
         const one = Array.isArray(data.sample_predictions) && data.sample_predictions.length ? data.sample_predictions[0] : null;
-        document.getElementById("manualPredictResult").textContent = one
-            ? `预测结果：${JSON.stringify(one)}`
-            : `预测完成：${JSON.stringify(data.unique_predictions || [])}`;
-    }).catch((err) => alert("手动预测失败：" + err.message));
+        let predictedValue = null;
+        if (one && typeof one === "object") {
+            predictedValue = one.predicted ?? one.prediction ?? one.result ?? null;
+        }
+        if (predictedValue === null && Array.isArray(data.unique_predictions) && data.unique_predictions.length > 0) {
+            predictedValue = data.unique_predictions[0];
+        }
+        const predictedNum = Number(predictedValue);
+        const predictedText = Number.isFinite(predictedNum)
+            ? predictedNum.toFixed(2)
+            : escapeHtml(predictedValue);
+        const result = predictedValue !== null
+            ? `🎯 预测结果：${targetName} = ${predictedText}`
+            : `✅ 预测完成：${escapeHtml(JSON.stringify(data.unique_predictions || []))}`;
+
+        const align = data.feature_alignment || {};
+        let alignHint = "";
+        if (Number(align.matched_count) < Number(align.train_feature_count)) {
+            alignHint = `<br><span class="text-warning">特征匹配：${align.matched_count || 0}/${align.train_feature_count || 0}，缺失 ${align.missing_count || 0} 个。请优先使用上方模板字段。</span>`;
+        }
+        if (Array.isArray(align.missing_features_preview) && align.missing_features_preview.length) {
+            alignHint += `<br><span class="small-hint">缺失特征示例：${escapeHtml(align.missing_features_preview.slice(0, 8).join(", "))}</span>`;
+        }
+
+        document.getElementById("manualPredictResult").innerHTML = `<strong>${result}</strong>${alignHint}`;
+
+        notif.update("✅ 预测完成", 'success');
+        setTimeout(() => notif.close(), 2000);
+    }).catch((err) => {
+        notif.update(`❌ 预测失败: ${err.message}`, 'error');
+        notify.error(`预测失败: ${err.message}`);
+    });
+});
+
+document.getElementById("manualHeaderTemplateBox")?.addEventListener("click", async () => {
+    const box = document.getElementById("manualHeaderTemplateBox");
+    const input = document.getElementById("manualPredictInput");
+    if (!box || !input) return;
+    input.value = box.value;
+    input.focus();
+    try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(box.value);
+            notify.success("已填入输入框并复制到剪贴板");
+            return;
+        }
+    } catch (e) {
+        // 剪贴板失败时只保留填入行为
+    }
+    notify.success("已填入输入框");
 });
 
 window.addEventListener("load", () => {
     showStep(0);
+    const stdInput = document.getElementById("cleanStdThreshold");
+    if (stdInput) updateOutlierPreviewHint(stdInput.value);
+    updateManualHeaderTemplate();
     setTimeout(sendContextToChatWidget, 200);
 });

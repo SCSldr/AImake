@@ -1,0 +1,244 @@
+/* ============================================================================
+   通知系统 CSS
+   ============================================================================ */
+
+.notification-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 400px;
+    pointer-events: none;
+}
+
+.notification {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-left: 4px solid #6c757d;
+    pointer-events: auto;
+    opacity: 0;
+    transform: translateX(400px);
+    transition: all 0.3s ease;
+}
+
+.notification.show {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.notification-content {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+}
+
+.notification-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    display: block;
+}
+
+.notification-spinner {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.notification-message {
+    font-size: 14px;
+    color: #212529;
+    line-height: 1.4;
+}
+
+.notification-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: #6c757d;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: color 0.2s;
+}
+
+.notification-close:hover {
+    color: #212529;
+}
+
+/* 不同类型的通知样式 */
+.notification-success {
+    border-left-color: #28a745;
+    background: #f0fdf4;
+}
+
+.notification-success .notification-icon {
+    color: #28a745;
+}
+
+.notification-error {
+    border-left-color: #dc3545;
+    background: #fdf5f5;
+}
+
+.notification-error .notification-icon {
+    color: #dc3545;
+}
+
+.notification-warning {
+    border-left-color: #ffc107;
+    background: #fffbf0;
+}
+
+.notification-warning .notification-icon {
+    color: #ffc107;
+}
+
+.notification-info {
+    border-left-color: #17a2b8;
+    background: #f0f9fb;
+}
+
+.notification-info .notification-icon {
+    color: #17a2b8;
+}
+
+.notification-loading {
+    border-left-color: #007bff;
+    background: #f0f7ff;
+}
+
+.notification-loading .notification-icon {
+    color: #007bff;
+}
+
+/* ============================================================================
+   步骤进度显示
+   ============================================================================ */
+
+.step-progress-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin: 12px 0;
+}
+
+.step-progress-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: white;
+    border-radius: 6px;
+    border: 1px solid #dee2e6;
+    font-size: 13px;
+    color: #6c757d;
+    transition: all 0.3s ease;
+}
+
+.step-progress-item.step-loading {
+    background: #f0f7ff;
+    border-color: #b3d9ff;
+    color: #0056b3;
+}
+
+.step-progress-item.step-success {
+    background: #f0fdf4;
+    border-color: #86efac;
+    color: #22863a;
+}
+
+.step-progress-item.step-error {
+    background: #fdf5f5;
+    border-color: #f8aeae;
+    color: #a00;
+}
+
+.step-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+}
+
+.step-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    display: block;
+}
+
+.step-spinner {
+    animation: spin 1s linear infinite;
+}
+
+.step-message {
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+/* ============================================================================
+   在线加载指示器（用于按钮状态）
+   ============================================================================ */
+
+.btn-loading {
+    position: relative;
+    color: transparent;
+}
+
+.btn-loading::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 14px;
+    height: 14px;
+    border: 2px solid currentColor;
+    border-radius: 50%;
+    border-top-color: transparent;
+    animation: spin 0.8s linear infinite;
+    opacity: 0.7;
+}
+
+/* ============================================================================
+   响应式设置
+   ============================================================================ */
+
+@media (max-width: 640px) {
+    .notification-container {
+        left: 10px;
+        right: 10px;
+        top: 10px;
+        max-width: none;
+    }
+
+    .notification {
+        transform: translateX(500px);
+    }
+
+    .notification.show {
+        transform: translateX(0);
+    }
+}
+

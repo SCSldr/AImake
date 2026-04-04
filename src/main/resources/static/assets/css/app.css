@@ -94,6 +94,16 @@ label.form-label,
     font-size: 0.95rem;
 }
 
+label.check-instance,
+.form-check-label,
+.form-text,
+.form-control,
+.form-select,
+.btn {
+    font-size: 0.95rem;
+    color: #495057;
+}
+
 .form-control,
 .form-select {
     background-color: var(--input-bg);
@@ -157,6 +167,7 @@ label.form-label,
     background: #f8f9fa;
     min-height: 220px;
 }
+
 
 .chat-widget-frame {
     position: fixed;

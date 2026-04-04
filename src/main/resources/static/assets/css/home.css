@@ -11,6 +11,16 @@
     --card-border: rgba(0, 0, 0, 0.05);
 }
 
+.outer-frame {
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.6); /* 半透明白色毛玻璃 */
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 18px;
+  box-shadow: 0 14px 34px rgba(20, 32, 72, 0.18);
+}
+
 body {
     min-height: 100vh;
     display: flex;
@@ -23,6 +33,7 @@ body {
 
 .home-wrap {
     width: min(980px, 92vw);
+    margin: 0 auto;
 }
 
 .home-title {

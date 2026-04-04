@@ -15,6 +15,7 @@ const MAX_CUSTOM_HEADERS = 6;
 const CHAT_COLLAPSED_SIZE = 58;
 const CHAT_OPEN_WIDTH = 380;
 const CHAT_OPEN_HEIGHT = 560;
+const MAX_STD_THRESHOLD = 4;
 
 // --- 聊天窗口通信 ---
 const aiChatWidgetFrame = document.getElementById("aiChatWidgetFrame");
@@ -452,9 +453,12 @@ document.getElementById("btnLoadData").addEventListener("click", async (e) => {
     const button = e.target;
     const file = document.getElementById("dataFile").files[0];
     if (!file) {
-        alert("请先选择数据文件。");
+        notify.warning("请先选择数据文件");
         return;
     }
+
+    const notif = notify.loading(`📤 上传中... (${file.name})`);
+
     await withLoading(button, "处理中...", async () => {
         const formData = new FormData();
         formData.append("file", file);
@@ -466,27 +470,40 @@ document.getElementById("btnLoadData").addEventListener("click", async (e) => {
         } catch (err) {
             data = { details: rawText || "后端返回了非 JSON 响应" };
         }
-        if (!response.ok) throw new Error(parseErrorMessage(data, response.status, "上传失败"));
-        if (data && data.status === "error") throw new Error(parseErrorMessage(data, response.status, "上传失败"));
+        if (!response.ok) {
+            notif.update(`❌ 上传失败: ${parseErrorMessage(data, response.status, "上传失败")}`, 'error');
+            throw new Error(parseErrorMessage(data, response.status, "上传失败"));
+        }
+        if (data && data.status === "error") {
+            notif.update(`❌ 解析失败: ${parseErrorMessage(data, response.status, "上传失败")}`, 'error');
+            throw new Error(parseErrorMessage(data, response.status, "上传失败"));
+        }
+
+        notif.update(`✅ 数据加载成功，共 ${data.total_rows} 行`, 'success');
         renderPreviewTable(data);
         setFilePath(data.file_path || `temp/${file.name}`);
         stepCompletion.step1 = true;
         invalidateFrom(1);
         updateStepControls();
-    }).catch(err => alert(`上传失败: ${err.message}`));
+
+        setTimeout(() => notif.close(), 2000);
+    }).catch(err => {
+        notif.update(`❌ 上传失败: ${err.message}`, 'error');
+        notify.error(`上传失败: ${err.message}`);
+    });
 });
 
 document.getElementById("btnGenerateData").addEventListener("click", async (e) => {
     const button = e.target;
     const prompt = document.getElementById("aiPrompt").value.trim();
     if (!prompt) {
-        alert("请填写生成需求。");
+        notify.warning("请填写生成需求");
         return;
     }
 
     const rowCount = Math.floor(Number(document.getElementById("aiRowCount").value || MIN_AI_ROWS));
     if (!Number.isFinite(rowCount) || rowCount < MIN_AI_ROWS || rowCount > MAX_AI_ROWS) {
-        alert(`生成行数必须在 ${MIN_AI_ROWS}~${MAX_AI_ROWS} 之间`);
+        notify.warning(`生成行数必须在 ${MIN_AI_ROWS}~${MAX_AI_ROWS} 之间`);
         return;
     }
 
@@ -494,9 +511,11 @@ document.getElementById("btnGenerateData").addEventListener("click", async (e) =
     try {
         customHeaders = parseCustomHeaders(document.getElementById("aiCustomHeaders").value);
     } catch (err) {
-        alert(err.message);
+        notify.warning(err.message);
         return;
     }
+
+    const notif = notify.loading("🤖 AI 正在生成数据中...");
 
     await withLoading(button, "生成中...", async () => {
         const finalPrompt = buildGeneratePrompt(prompt, customHeaders);
@@ -506,28 +525,139 @@ document.getElementById("btnGenerateData").addEventListener("click", async (e) =
             row_count: rowCount,
             rowCount
         });
+
+        notif.update(`✅ 数据生成成功，共 ${data.total_rows} 行`, 'success');
         setFilePath(data.file_path);
         renderPreviewTable(data);
         stepCompletion.step1 = true;
         invalidateFrom(1);
         updateStepControls();
-    }).catch(err => alert(`错误: ${err.message}`));
+
+        setTimeout(() => notif.close(), 2000);
+    }).catch(err => {
+        notif.update(`❌ 生成失败: ${err.message}`, 'error');
+        notify.error(`生成失败: ${err.message}`);
+    });
+});
+
+document.getElementById("btnCheckQuality").addEventListener("click", async (e) => {
+    const button = e.target;
+    if (!state.currentFilePath) {
+        notify.warning("请先上传或生成数据");
+        return;
+    }
+
+    const notif = notify.loading("📊 正在检测数据质量...");
+
+    try {
+        const response = await fetch("/api/py/check-data", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ file_path: state.currentFilePath })
+        });
+        const data = await response.json();
+
+        if (!response.ok || data.status === "error") {
+            throw new Error(data.details || "质量检测失败");
+        }
+
+        // 生成质量报告
+        let reportHtml = "";
+
+        if (data.duplicates.has_duplicates) {
+            reportHtml += `<div class="mb-2">🔁 <strong>重复行：</strong>${data.duplicates.duplicate_rows} 行（${data.duplicates.duplicate_ratio}%）</div>`;
+            document.getElementById("duplicateHint").innerHTML = `<strong>${data.duplicates.duplicate_rows}</strong> 行重复`;
+        } else {
+            document.getElementById("duplicateHint").innerHTML = "无重复行 ✓";
+        }
+
+        if (data.non_standard_values.has_non_standard) {
+            reportHtml += `<div class="mb-2">⚠️ <strong>非规范值：</strong>${data.non_standard_values.problematic_cells} 个单元格（${data.non_standard_values.problematic_ratio}%）`;
+            const issues = [];
+            for (const [col, details] of Object.entries(data.non_standard_values.issues_by_column)) {
+                if (details.comma_numbers > 0) issues.push(`${col}中有${details.comma_numbers}个逗号分隔的数字`);
+                if (details.iso_dates > 0) issues.push(`${col}中有${details.iso_dates}个ISO日期格式`);
+                if (details.leading_spaces > 0) issues.push(`${col}中有${details.leading_spaces}个含空格的值`);
+            }
+            if (issues.length > 0) {
+                reportHtml += `<ul style="margin: 8px 0 0 20px;">` + issues.map(i => `<li style="font-size: 12px;">${i}</li>`).join("") + `</ul>`;
+            }
+            reportHtml += `</div>`;
+            document.getElementById("nonStandardHint").innerHTML = `<strong>${data.non_standard_values.problematic_cells}</strong> 个问题`;
+        } else {
+            document.getElementById("nonStandardHint").innerHTML = "无非规范值 ✓";
+        }
+
+        if (!data.quality_issues.has_issues) {
+            reportHtml = "<div>✅ 数据质量良好，无明显问题</div>";
+        }
+
+        const panel = document.getElementById("qualityReportPanel");
+        document.getElementById("qualityReportContent").innerHTML = reportHtml;
+        panel.classList.remove("d-none");
+
+        notif.update(`✅ 检测完成：${data.quality_issues.issue_count} 个问题`, 'success');
+        setTimeout(() => notif.close(), 2000);
+    } catch (err) {
+        notif.update(`❌ 检测失败: ${err.message}`, 'error');
+        notify.error(`检测失败: ${err.message}`);
+    }
+});
+
+// 实时计算异常值数量（监听滑块变化）
+document.getElementById("cleanStdThreshold").addEventListener("input", async (e) => {
+    const stdValue = Math.min(MAX_STD_THRESHOLD, parseFloat(e.target.value));
+    if (Number(e.target.value) !== stdValue) {
+        e.target.value = String(stdValue);
+    }
+    document.getElementById("stdThresholdValue").textContent = stdValue.toFixed(1);
+
+    if (!state.currentFilePath) return;
+
+    try {
+        const response = await fetch("/api/py/calculate-outliers", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                file_path: state.currentFilePath,
+                std_threshold: stdValue
+            })
+        });
+        const data = await response.json();
+
+        if (response.ok && data.status === "success") {
+            document.getElementById("outlierPreviewHint").textContent =
+                `异常值统计：${data.outlier_count} 个单元格（${data.outlier_percentage}%）`;
+        }
+    } catch (err) {
+        // 静默处理，不影响用户体验
+    }
 });
 
 document.getElementById("btnCleanData").addEventListener("click", async (e) => {
     const button = e.target;
     if (!state.currentFilePath) {
-        alert("请先上传或生成数据。");
+        notify.warning("请先上传或生成数据");
         return;
     }
 
     const removeNullRows = Boolean(document.getElementById("cleanRemoveNullRows")?.checked);
+    const removeDuplicates = Boolean(document.getElementById("cleanRemoveDuplicates")?.checked);
+    const standardizeValues = Boolean(document.getElementById("cleanStandardizeValues")?.checked);
     const outlierMode = (document.getElementById("cleanOutlierMode")?.value || "none").trim();
-    const stdThreshold = Number(document.getElementById("cleanStdThreshold")?.value || 3);
+    const stdThresholdRaw = Number(document.getElementById("cleanStdThreshold")?.value || 3);
+    const stdThreshold = Math.min(MAX_STD_THRESHOLD, stdThresholdRaw);
+    const stdInput = document.getElementById("cleanStdThreshold");
+    if (stdInput && Number(stdInput.value) !== stdThreshold) {
+        stdInput.value = String(stdThreshold);
+        document.getElementById("stdThresholdValue").textContent = stdThreshold.toFixed(1);
+    }
     if (!Number.isFinite(stdThreshold) || stdThreshold <= 0) {
-        alert("标准差阈值必须大于 0");
+        notify.warning("标准差阈值必须大于 0");
         return;
     }
+
+    const notif = notify.loading("🧹 正在清洗数据...");
 
     await withLoading(button, "清洗中...", async () => {
         const data = await postJson("/api/py/clean-data", {
@@ -536,53 +666,109 @@ document.getElementById("btnCleanData").addEventListener("click", async (e) => {
             fill_missing: !removeNullRows,
             outlier_mode: outlierMode,
             remove_outliers: outlierMode === "remove",
-            outlier_std_threshold: stdThreshold
+            outlier_std_threshold: stdThreshold,
+            remove_duplicates: removeDuplicates,
+            standardize_values: standardizeValues
         }, "数据清洗失败");
+
         setFilePath(data.cleaned_file_path || data.file_path || state.currentFilePath);
         renderPreviewTable(data);
         renderCleanStats(data.statistics);
+
+        const stats = data.statistics;
+        const cleanedRows = stats.cleaned_rows || 0;
+        const kept = stats.cleaned_rows && stats.original_rows ?
+            ((cleanedRows / stats.original_rows) * 100).toFixed(1) : '0';
+
+        let details = `保留 ${kept}% (${cleanedRows} 行)`;
+        if (removeDuplicates && stats.rows_removed_by_duplicate) details += `，删除重复 ${stats.rows_removed_by_duplicate}`;
+        if (standardizeValues && stats.rows_standardized) details += `，规范化 ${stats.rows_standardized}`;
+
+        notif.update(`✅ 清洗完成：${details}`, 'success');
         stepCompletion.step2 = true;
         invalidateFrom(2);
         updateStepControls();
-    }).catch(err => alert(`错误: ${err.message}`));
+
+        setTimeout(() => notif.close(), 2000);
+    }).catch(err => {
+        notif.update(`❌ 清洗失败: ${err.message}`, 'error');
+        notify.error(`清洗失败: ${err.message}`);
+    });
 });
 
 document.getElementById("btnClustering").addEventListener("click", async (e) => {
     const button = e.target;
     if (!state.currentFilePath) {
-        alert("请先准备数据。");
+        notify.warning("请先准备数据");
         return;
     }
+
     state.nClusters = Number(document.getElementById("nClusters").value);
+    const notif = notify.loading(`🎯 正在进行聚类分析 (K=${state.nClusters})...`);
+
     await withLoading(button, "聚类中...", async () => {
-        const data = await postJson("/api/py/clustering/train", {
+        const data = await postJson("/api/py/clustering/train_and_visualize", {
             file_path: state.currentFilePath,
             n_clusters: state.nClusters,
             random_seed: Number(document.getElementById("randomSeed").value)
         });
-        document.getElementById("clusterImage").src = normalizeImageBase64(data.cluster_image_base64);
-        document.getElementById("clusterStats").textContent = JSON.stringify(data.clustering_info, null, 2);
+
+        // 显示聚类图像
+        if (data.cluster_image_base64) {
+            document.getElementById("clusterImage").src = normalizeImageBase64(data.cluster_image_base64);
+        }
+
+        // 显示聚类统计
+        if (data.statistics) {
+            const stats = data.statistics;
+            document.getElementById("clusterStats").textContent =
+                `样本数: ${stats.n_samples}\n特征数: ${stats.n_features}\n内聚度: ${stats.inertia?.toFixed(2)}`;
+        }
+
+        notif.update(`✅ 聚类完成：分成 ${state.nClusters} 个簇`, 'success');
         stepCompletion.step3 = true;
         invalidateFrom(3);
         updateStepControls();
-    }).catch(err => alert(`错误: ${err.message}`));
+
+        setTimeout(() => notif.close(), 2000);
+    }).catch(err => {
+        notif.update(`❌ 聚类失败: ${err.message}`, 'error');
+        notify.error(`聚类失败: ${err.message}`);
+    });
 });
 
 document.getElementById("btnVisualize").addEventListener("click", async (e) => {
     const button = e.target;
     if (!state.currentFilePath) {
-        alert("请先准备数据。");
+        notify.warning("请先准备数据");
         return;
     }
+
+    const method = document.getElementById("reduceMethod").value;
+    const notif = notify.loading(`📊 正在生成 ${method === 'pca' ? 'PCA' : 't-SNE'} 可视化...`);
+
     await withLoading(button, "可视化中...", async () => {
         const data = await postJson("/api/py/clustering/visualize", {
             file_path: state.currentFilePath,
-            method: document.getElementById("reduceMethod").value
+            method: method
         });
-        document.getElementById("visualizeImage").src = normalizeImageBase64(data.plot_base64);
+
+        // 显示可视化图像
+        if (data.plot_base64) {
+            document.getElementById("visualizeImage").src = normalizeImageBase64(data.plot_base64);
+            notif.update(`✅ 可视化完成：使用 ${method === 'pca' ? 'PCA' : 't-SNE'} 方法`, 'success');
+        } else {
+            notif.update(`⚠️ 可视化生成失败，未获得图像数据`, 'warning');
+        }
+
         stepCompletion.step4 = true;
         updateStepControls();
-    }).catch(err => alert(`错误: ${err.message}`));
+
+        setTimeout(() => notif.close(), 2000);
+    }).catch(err => {
+        notif.update(`❌ 可视化失败: ${err.message}`, 'error');
+        notify.error(`可视化失败: ${err.message}`);
+    });
 });
 
 
